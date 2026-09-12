@@ -1,7 +1,9 @@
 import io
 import os
+import zipfile
 import streamlit as st
 import pandas as pd
+import plotly.express as px
 from pypdf import PdfReader
 import docx2txt
 import tempfile
@@ -21,13 +23,21 @@ app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Di
 # ==========================================
 if app_mode == "Folder Plagiarism Checker":
     st.header("Folder Similarity Matrix Analysis")
-    st.write("Upload multiple student submissions below to check cross-document similarities.")
+    st.write("Upload multiple student submissions or a ZIP archive below to check cross-document similarities.")
 
     st.sidebar.header("Analysis Settings")
     min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
     max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
 
-    # Privacy notice placed below the sliders for Folder mode
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Smart Filtering")
+    reference_file = st.sidebar.file_uploader(
+        "Upload Reference/Prompt (Optional)",
+        type=["docx", "pdf", "txt"],
+        help="Upload the assignment prompt or syllabus. Common text shared here will be filtered out of student papers."
+    )
+
+    # Privacy notice placed below settings for Folder mode
     with st.sidebar.expander("🔒 Data Privacy & Security"):
         st.write(
             "**Are my files secure?**\n\n"
@@ -49,44 +59,88 @@ if app_mode == "Folder Plagiarism Checker":
             "use, making it safe and secure for checking sensitive submissions!"
         )
 
-    uploaded_files = st.file_uploader(
-        "Upload Student Submission Documents (.docx or .pdf only). PDFs should be text based only. Scanned images will not produce desired results.",
-        type=["docx", "pdf"],
-        accept_multiple_files=True
-    )
+    upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive (.zip)"])
 
-    def extract_text_from_file(uploaded_file):
+    raw_uploaded_files = []
+    zip_uploaded_file = None
+
+    if upload_choice == "Individual Files":
+        raw_uploaded_files = st.file_uploader(
+            "Upload Student Submission Documents (.docx, .pdf, or .txt)",
+            type=["docx", "pdf", "txt"],
+            accept_multiple_files=True
+        )
+    else:
+        zip_uploaded_file = st.file_uploader(
+            "Upload ZIP Archive containing student submissions",
+            type=["zip"]
+        )
+
+    def extract_text_from_file_obj(file_obj, filename_lower):
         text = ""
-        filename = uploaded_file.name.lower()
         try:
-            if filename.endswith('.pdf'):
-                reader = PdfReader(uploaded_file)
+            if filename_lower.endswith('.pdf'):
+                reader = PdfReader(file_obj)
                 for page in reader.pages:
                     extracted = page.extract_text()
                     if extracted: text += extracted + " "
-            elif filename.endswith('.docx'):
+            elif filename_lower.endswith('.docx'):
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-                    tmp.write(uploaded_file.getvalue())
+                    tmp.write(file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read())
                     tmp_path = tmp.name
                 text = docx2txt.process(tmp_path)
                 os.unlink(tmp_path)
+            elif filename_lower.endswith('.txt'):
+                content = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
+                text = content.decode('utf-8', errors='ignore')
         except Exception as e:
-            st.warning(f"Could not read {uploaded_file.name}: {e}")
+            pass
         return text
 
-    if uploaded_files:
-        st.info(f"Loaded {len(uploaded_files)} file(s) successfully.")
+    # Process ZIP file if uploaded
+    processed_files = []
+    if upload_choice == "Individual Files" and raw_uploaded_files:
+        processed_files = raw_uploaded_files
+    elif upload_choice == "ZIP Archive (.zip)" and zip_uploaded_file:
+        try:
+            with zipfile.ZipFile(zip_uploaded_file, 'r') as z:
+                for filename in z.namelist():
+                    if filename.lower().endswith(('docx', 'pdf', 'txt')) and not filename.startswith('__MACOSX/'):
+                        with z.open(filename) as f:
+                            file_bytes = io.BytesIO(f.read())
+                            file_bytes.name = os.path.basename(filename)
+                            if file_bytes.name:
+                                processed_files.append(file_bytes)
+        except Exception as e:
+            st.error(f"Could not read ZIP archive: {e}")
+
+    if processed_files:
+        st.info(f"Loaded {len(processed_files)} file(s) successfully.")
         
         if st.button("Run Plagiarism Analysis", type="primary"):
-            if len(uploaded_files) < 2:
+            if len(processed_files) < 2:
                 st.error("Please upload at least 2 documents to perform a comparison.")
             else:
                 with st.spinner("Analyzing documents and calculating similarity matrix..."):
+                    # Extract reference text if provided
+                    reference_text = ""
+                    if reference_file:
+                        reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
+
                     documents, filenames = [], []
                     
-                    for file in uploaded_files:
-                        txt = extract_text_from_file(file)
+                    for file in processed_files:
+                        txt = extract_text_from_file_obj(file, file.name.lower())
                         if txt.strip():
+                            # Remove reference/prompt boilerplate if enabled
+                            if reference_text.strip():
+                                # Simple regex or keyword replacement for prompt filtering
+                                prompt_words = set(reference_text.split())
+                                # Filter out sentences heavily saturated with prompt words or clean directly
+                                cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
+                                if len(cleaned_txt.strip()) > 50:
+                                    txt = cleaned_txt
+                            
                             documents.append(txt)
                             filenames.append(file.name)
                     
@@ -104,6 +158,19 @@ if app_mode == "Folder Plagiarism Checker":
                         df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
                         
                         st.success("Analysis complete!")
+                        
+                        # --- VISUAL HEATMAP ---
+                        st.subheader("Visual Similarity Heatmap")
+                        fig = px.imshow(
+                            df,
+                            text_auto=".1f",
+                            color_continuousscale="Reds",
+                            labels=dict(color="Similarity %"),
+                            range_color=[0, 100]
+                        )
+                        fig.update_layout(height=500, margin=dict(l=20, r=20, t=20, b=20))
+                        st.plotly_chart(fig, use_container_width=True)
+
                         st.subheader("Similarity Matrix Report (%)")
                         st.dataframe(df.style.format("{:.2f}%"))
                         
@@ -126,7 +193,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
     st.header("Deep Dive Matcher")
     st.write("Compare two specific documents to extract exact matching sentences or true paragraphs.")
 
-    # Privacy notice placed right under the radio menu for Deep Dive mode
     with st.sidebar.expander("🔒 Data Privacy & Security"):
         st.write(
             "**Are my files secure?**\n\n"
@@ -150,9 +216,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf"], key="file1")
+        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt"], key="file1")
     with col2:
-        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf"], key="file2")
+        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt"], key="file2")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -172,6 +238,10 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             for page in reader.pages:
                 extracted = page.extract_text()
                 if extracted: full_text += extracted + "\n\n"
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
+        elif ext == '.txt':
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                full_text = f.read()
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
         
         units = set()
@@ -198,6 +268,10 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             for page in reader.pages:
                 extracted = page.extract_text()
                 if extracted: full_text += extracted + "\n\n"
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
+        elif ext == '.txt':
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                full_text = f.read()
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
         
         valid_paragraphs = []
@@ -258,7 +332,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 # MODE 3: USER GUIDE & HELP
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
-    # Privacy notice placed in sidebar for Help mode as well
     with st.sidebar.expander("🔒 Data Privacy & Security"):
         st.write(
             "**Are my files secure?**\n\n"
@@ -294,10 +367,11 @@ elif app_mode == "💡 User Guide & Help":
 
     st.subheader("2. How It Works")
     st.write(
-        "APLens offers two distinct analysis modes:\n\n"
-        "* **Folder Plagiarism Checker:** Upload multiple `.docx` or `.pdf` files simultaneously. The app extracts "
-        "their text, converts words into numerical token vectors using **TF-IDF (Term Frequency-Inverse Document Frequency)**, "
-        "and calculates a **Cosine Similarity** percentage matrix across every possible pair of documents.\n"
+        "APLens offers multiple advanced analysis modes:\n\n"
+        "* **Folder Plagiarism Checker:** Upload individual submissions or a `.zip` folder archive. The app extracts "
+        "text, filters out optional prompt boilerplate, converts words into token vectors using **TF-IDF**, "
+        "and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
+        "* **Visual Heatmap:** An interactive color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly.\n"
         "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences "
         "or true multi-sentence paragraphs using custom structural regex matching."
     )
