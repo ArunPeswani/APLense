@@ -13,30 +13,6 @@ st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄",
 
 st.title("📄 APLens Plagiarism Suite")
 
-# --- SIDEBAR PRIVACY NOTICE (Visible Everywhere, Positioned on Top) ---
-with st.sidebar.expander("🔒 Data Privacy & Security"):
-    st.write(
-        "**Are my files secure?**\n\n"
-        "Yes! Uploaded documents are processed entirely in memory "
-        "for the duration of your analysis session. "
-        "None of your files or text data are saved, logged, or "
-        "permanently stored on the cloud server.\n\n"
-        "* **Where they live in memory:** The uploaded documents are read into the temporary "
-        "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
-        "server specifically for the duration of that session.\n\n"
-        "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
-        "complete and your report is generated, the application finishes executing that request. In "
-        "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
-        "processing, or they are automatically garbage-collected.\n\n"
-        "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
-        "times out due to inactivity, the Streamlit server completely destroys that active container "
-        "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
-        "Your data remains completely private to your active session and is discarded immediately after "
-        "use, making it safe and secure for checking sensitive submissions!"
-    )
-
-st.sidebar.markdown("---")
-
 # --- NAVIGATION MENU ---
 app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)"])
 
@@ -50,6 +26,28 @@ if app_mode == "Folder Plagiarism Checker":
     st.sidebar.header("Analysis Settings")
     min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
     max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
+
+    # Privacy notice placed below the sliders for Folder mode
+    with st.sidebar.expander("🔒 Data Privacy & Security"):
+        st.write(
+            "**Are my files secure?**\n\n"
+            "Yes! Uploaded documents are processed entirely in memory "
+            "for the duration of your analysis session. "
+            "None of your files or text data are saved, logged, or "
+            "permanently stored on the cloud server.\n\n"
+            "* **Where they live in memory:** The uploaded documents are read into the temporary "
+            "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
+            "server specifically for the duration of that session.\n\n"
+            "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
+            "complete and your report is generated, the application finishes executing that request. In "
+            "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
+            "processing, or they are automatically garbage-collected.\n\n"
+            "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
+            "times out due to inactivity, the Streamlit server completely destroys that active container "
+            "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
+            "Your data remains completely private to your active session and is discarded immediately after "
+            "use, making it safe and secure for checking sensitive submissions!"
+        )
 
     uploaded_files = st.file_uploader(
         "Upload Student Submission Documents (.docx or .pdf only). PDFs should be text based only. Scanned images will not produce desired results.",
@@ -127,6 +125,28 @@ if app_mode == "Folder Plagiarism Checker":
 elif app_mode == "Deep Dive (2-Doc Comparison)":
     st.header("Deep Dive Matcher")
     st.write("Compare two specific documents to extract exact matching sentences or true paragraphs.")
+
+    # Privacy notice placed right under the radio menu for Deep Dive mode
+    with st.sidebar.expander("🔒 Data Privacy & Security"):
+        st.write(
+            "**Are my files secure?**\n\n"
+            "Yes! Uploaded documents are processed entirely in memory "
+            "for the duration of your analysis session. "
+            "None of your files or text data are saved, logged, or "
+            "permanently stored on the cloud server.\n\n"
+            "* **Where they live in memory:** The uploaded documents are read into the temporary "
+            "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
+            "server specifically for the duration of that session.\n\n"
+            "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
+            "complete and your report is generated, the application finishes executing that request. In "
+            "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
+            "processing, or they are automatically garbage-collected.\n\n"
+            "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
+            "times out due to inactivity, the Streamlit server completely destroys that active container "
+            "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
+            "Your data remains completely private to your active session and is discarded immediately after "
+            "use, making it safe and secure for checking sensitive submissions!"
+        )
 
     col1, col2 = st.columns(2)
     with col1:
