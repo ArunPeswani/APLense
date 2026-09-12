@@ -16,17 +16,6 @@ st.title("📄 APLens Plagiarism Suite")
 # --- NAVIGATION MENU ---
 app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)"])
 
-# ==========================================
-# MODE 1: FOLDER PLAGIARISM CHECKER
-# ==========================================
-if app_mode == "Folder Plagiarism Checker":
-    st.header("Folder Similarity Matrix Analysis")
-    st.write("Upload multiple student submissions below to check cross-document similarities.")
-
-    st.sidebar.header("Analysis Settings")
-    min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
-    max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
-
 # --- SIDEBAR PRIVACY NOTICE ---
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
@@ -50,6 +39,16 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
 
     )
 
+# ==========================================
+# MODE 1: FOLDER PLAGIARISM CHECKER
+# ==========================================
+if app_mode == "Folder Plagiarism Checker":
+    st.header("Folder Similarity Matrix Analysis")
+    st.write("Upload multiple student submissions below to check cross-document similarities.")
+
+    st.sidebar.header("Analysis Settings")
+    min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
+    max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
 
     uploaded_files = st.file_uploader(
         "Upload Student Documents (.docx or .pdf)",
