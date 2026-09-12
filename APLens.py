@@ -15,7 +15,7 @@ st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄",
 
 st.title("📄 APLens Plagiarism Suite")
 
-# --- GLOBAL SIDEBAR CONTROLS (Persistent across modes) ---
+# --- NAVIGATION MENU ---
 app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"])
 
 st.sidebar.markdown("---")
@@ -25,6 +25,13 @@ reference_file = st.sidebar.file_uploader(
     type=["docx", "pdf", "txt", "rtf"],
     help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
 )
+
+st.sidebar.markdown("---")
+
+# --- ANALYSIS SETTINGS (Placed between Smart Filtering & Reset/Help) ---
+st.sidebar.subheader("Analysis Settings")
+min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
+max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
 
 st.sidebar.markdown("---")
 
@@ -81,7 +88,6 @@ def extract_text_from_file_obj(file_obj, filename_lower):
 # Extract global reference text if uploaded
 global_reference_text = ""
 if reference_file:
-    # Reset file pointer just in case
     reference_file.seek(0)
     global_reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
 
@@ -92,10 +98,6 @@ if reference_file:
 if app_mode == "Folder Plagiarism Checker":
     st.header("Folder Similarity Matrix Analysis")
     st.write("Upload multiple student submissions or a ZIP archive below to check cross-document similarities.")
-
-    st.sidebar.header("Analysis Settings")
-    min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
-    max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
 
     upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive / Folder (.zip)"])
 
