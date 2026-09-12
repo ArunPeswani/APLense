@@ -21,7 +21,7 @@ app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Di
 # ==========================================
 if app_mode == "Folder Plagiarism Checker":
     st.header("Folder Similarity Matrix Analysis")
-    st.write("Upload multiple student submissions below to check cross-document similarities.")
+    st.write("Upload multiple student submission documents (only .docx or .pdf) below to check cross-document similarities.")
 
     st.sidebar.header("Analysis Settings")
     min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
@@ -50,7 +50,7 @@ if app_mode == "Folder Plagiarism Checker":
         )
 
     uploaded_files = st.file_uploader(
-        "Upload Student Submission Documents (.docx or .pdf only). PDFs should be text based only. Scanned images will not produce desired results.",
+        "PDF files should be text based only. Scanned images will not produce desired results.",
         type=["docx", "pdf"],
         accept_multiple_files=True
     )
