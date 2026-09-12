@@ -59,7 +59,7 @@ if st.sidebar.button("🔄 Reset Everything", type="secondary"):
 
 st.sidebar.markdown("---")
 
-# 5. Data Privacy & Security
+# 5. Data Privacy & Security (Polished with navigation lifecycle)
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
         "**Are my files secure?**\n\n"
@@ -70,6 +70,9 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "* **Where they live in memory:** The uploaded documents are read into the temporary "
         "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
         "server specifically for the duration of that session.\n\n"
+        "* **Temporary lifecycle & navigation:** Your uploaded files remain temporarily available "
+        "only until your results are generated. As soon as you navigate away from the current page "
+        "or switch views, the active file handles are safely cleared and discarded from memory.\n\n"
         "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
         "complete and your report is generated, the application finishes executing that request. In "
         "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
