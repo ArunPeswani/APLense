@@ -59,7 +59,7 @@ if app_mode == "Folder Plagiarism Checker":
             "use, making it safe and secure for checking sensitive submissions!"
         )
 
-    upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive (.zip)"])
+    upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive / Folder (.zip)"])
 
     raw_uploaded_files = []
     zip_uploaded_file = None
@@ -72,7 +72,7 @@ if app_mode == "Folder Plagiarism Checker":
         )
     else:
         zip_uploaded_file = st.file_uploader(
-            "Upload ZIP Archive containing student submissions",
+            "Upload ZIP Folder Archive containing student submissions",
             type=["zip"]
         )
 
@@ -101,7 +101,7 @@ if app_mode == "Folder Plagiarism Checker":
     processed_files = []
     if upload_choice == "Individual Files" and raw_uploaded_files:
         processed_files = raw_uploaded_files
-    elif upload_choice == "ZIP Archive (.zip)" and zip_uploaded_file:
+    elif upload_choice == "ZIP Archive / Folder (.zip)" and zip_uploaded_file:
         try:
             with zipfile.ZipFile(zip_uploaded_file, 'r') as z:
                 for filename in z.namelist():
@@ -156,10 +156,12 @@ if app_mode == "Folder Plagiarism Checker":
                         
                         st.success("Analysis complete!")
                         
-                        # --- VISUAL HEATMAP (Fixed with zmin/zmax) ---
+                        # --- VISUAL HEATMAP (Fixed with raw array & explicit axes) ---
                         st.subheader("Visual Similarity Heatmap")
                         fig = px.imshow(
-                            df,
+                            similarity_matrix,
+                            x=filenames,
+                            y=filenames,
                             text_auto=".1f",
                             color_continuousscale="Reds",
                             labels=dict(color="Similarity %"),
@@ -363,15 +365,14 @@ elif app_mode == "💡 User Guide & Help":
         "to find cross-document similarities or perform deep-dive text matches between two specific files."
     )
 
-    st.subheader("2. How It Works")
+    st.subheader("2. How It Works & Key Features")
     st.write(
-        "APLens offers multiple advanced analysis modes:\n\n"
-        "* **Folder Plagiarism Checker:** Upload individual submissions or a `.zip` folder archive (supporting `.docx`, `.pdf`, `.txt`, and `.rtf` formats). The app extracts "
-        "text, filters out optional prompt boilerplate, converts words into token vectors using **TF-IDF**, "
-        "and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
-        "* **Visual Heatmap:** An interactive color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly.\n"
-        "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences "
-        "or true multi-sentence paragraphs using custom structural regex matching."
+        "APLens offers multiple advanced analysis modes and features:\n\n"
+        "* **Flexible Uploads:** Upload individual files or compressed ZIP archives / folders containing `.docx`, `.pdf`, `.txt`, and `.rtf` documents.\n"
+        "* **Folder Plagiarism Checker:** Extracts text, tokenizes words via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
+        "* **Smart Prompt/Reference Filtering:** Optionally upload an assignment prompt or syllabus file to filter out shared common boilerplate text automatically.\n"
+        "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
+        "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences or true multi-sentence paragraphs using custom structural regex matching."
     )
 
     st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
