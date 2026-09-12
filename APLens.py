@@ -50,7 +50,7 @@ if app_mode == "Folder Plagiarism Checker":
         )
 
     uploaded_files = st.file_uploader(
-        "Upload Student Documents (.docx or .pdf)",
+        "Upload Student Submission Documents (.docx or .pdf only). PDFs should be text based only. Scanned images may produce desired results.",
         type=["docx", "pdf"],
         accept_multiple_files=True
     )
