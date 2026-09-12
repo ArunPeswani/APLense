@@ -31,21 +31,21 @@ max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10,
 
 st.sidebar.markdown("---")
 
-# 3. Reset Button
-if st.sidebar.button("🔄 Reset Everything", type="secondary"):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    st.rerun()
-
-st.sidebar.markdown("---")
-
-# 4. Global Smart Filtering
+# 3. Global Smart Filtering
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Reference/Prompt (Optional)",
     type=["docx", "pdf", "txt", "rtf"],
     help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
 )
+
+st.sidebar.markdown("---")
+
+# 4. Reset Button
+if st.sidebar.button("🔄 Reset Everything", type="secondary"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
 
 st.sidebar.markdown("---")
 
