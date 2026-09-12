@@ -16,6 +16,16 @@ st.title("📄 APLens Plagiarism Suite")
 # --- NAVIGATION MENU ---
 app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)"])
 
+# --- SIDEBAR PRIVACY NOTICE ---
+with st.sidebar.expander("🔒 Data Privacy & Security"):
+    st.write(
+        "**Are my files secure?**\n\n"
+        "Yes! Uploaded documents are processed entirely in memory "
+        "for the duration of your analysis session. "
+        "None of your files or text data are saved, logged, or "
+        "permanently stored on the cloud server."
+    )
+
 # ==========================================
 # MODE 1: FOLDER PLAGIARISM CHECKER
 # ==========================================
