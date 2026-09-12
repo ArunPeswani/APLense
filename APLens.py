@@ -43,7 +43,7 @@ st.sidebar.markdown("---")
 # 3. Global Smart Filtering
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
-    "Upload Reference/Prompt (Optional)",
+    "Upload Assignment Instructions File Here (Optional)",
     type=["docx", "pdf", "txt", "rtf"],
     key="global_ref_file",
     help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
