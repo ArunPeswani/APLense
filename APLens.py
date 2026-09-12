@@ -35,8 +35,8 @@ st.sidebar.markdown("---")
 
 # 2. Analysis Settings (Sliders)
 st.sidebar.subheader("Analysis Settings")
-min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
-max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
+min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key="min_words")
+max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key="max_words")
 
 st.sidebar.markdown("---")
 
@@ -45,6 +45,7 @@ st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Reference/Prompt (Optional)",
     type=["docx", "pdf", "txt", "rtf"],
+    key="global_ref_file",
     help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
 )
 
@@ -116,7 +117,7 @@ if app_mode == "Folder Plagiarism Checker":
     st.header("Folder Similarity Matrix Analysis")
     st.write("Upload multiple student submissions or a ZIP archive below to check cross-document similarities.")
 
-    upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive / Folder (.zip)"])
+    upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive / Folder (.zip)"], key="folder_upload_choice")
 
     raw_uploaded_files = []
     zip_uploaded_file = None
@@ -125,12 +126,14 @@ if app_mode == "Folder Plagiarism Checker":
         raw_uploaded_files = st.file_uploader(
             "Upload Student Submission Documents (.docx, .pdf, .txt, or .rtf)",
             type=["docx", "pdf", "txt", "rtf"],
-            accept_multiple_files=True
+            accept_multiple_files=True,
+            key="folder_indiv_files"
         )
     else:
         zip_uploaded_file = st.file_uploader(
             "Upload ZIP Folder Archive containing student submissions",
-            type=["zip"]
+            type=["zip"],
+            key="folder_zip_file"
         )
 
     # Process ZIP file if uploaded
@@ -153,7 +156,7 @@ if app_mode == "Folder Plagiarism Checker":
     if processed_files:
         st.info(f"Loaded {len(processed_files)} file(s) successfully.")
         
-        if st.button("Run Plagiarism Analysis", type="primary"):
+        if st.button("Run Plagiarism Analysis", type="primary", key="run_folder_analysis"):
             if len(processed_files) < 2:
                 st.error("Please upload at least 2 documents to perform a comparison.")
             else:
@@ -186,43 +189,56 @@ if app_mode == "Folder Plagiarism Checker":
                         
                         df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
                         
-                        st.success("Analysis complete!")
-                        
-                        # --- VISUAL HEATMAP ---
-                        st.subheader("Visual Similarity Heatmap")
-                        text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
-                        
-                        fig = go.Figure(data=go.Heatmap(
-                            z=similarity_matrix,
-                            x=filenames,
-                            y=filenames,
-                            text=text_annotations,
-                            texttemplate="%{text}",
-                            colorscale="Reds",
-                            zmin=0,
-                            zmax=100
-                        ))
-                        fig.update_layout(
-                            height=500, 
-                            margin=dict(l=20, r=20, t=20, b=20),
-                            xaxis=dict(tickangle=-45)
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
+                        # Save results to session state so they persist across page switches
+                        st.session_state.folder_df = df
+                        st.session_state.folder_similarity_matrix = similarity_matrix
+                        st.session_state.folder_filenames = filenames
+                        st.session_state.folder_analyzed = True
 
-                        st.subheader("Similarity Matrix Report (%)")
-                        st.dataframe(df.style.format("{:.2f}%"))
-                        
-                        output = io.BytesIO()
-                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            df.to_excel(writer, sheet_name='Plagiarism Report')
-                        processed_data = output.getvalue()
-                        
-                        st.download_button(
-                            label="📥 Download Plagiarism Report (Excel)",
-                            data=processed_data,
-                            file_name="plagiarism_report.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
+    # Render results if they exist in session state
+    if st.session_state.get("folder_analyzed", False):
+        df = st.session_state.folder_df
+        similarity_matrix = st.session_state.folder_similarity_matrix
+        filenames = st.session_state.folder_filenames
+
+        st.success("Analysis complete!")
+        
+        # --- VISUAL HEATMAP ---
+        st.subheader("Visual Similarity Heatmap")
+        text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
+        
+        fig = go.Figure(data=go.Heatmap(
+            z=similarity_matrix,
+            x=filenames,
+            y=filenames,
+            text=text_annotations,
+            texttemplate="%{text}",
+            colorscale="Reds",
+            zmin=0,
+            zmax=100
+        ))
+        fig.update_layout(
+            height=500, 
+            margin=dict(l=20, r=20, t=20, b=20),
+            xaxis=dict(tickangle=-45)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Similarity Matrix Report (%)")
+        st.dataframe(df.style.format("{:.2f}%"))
+        
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Plagiarism Report')
+        processed_data = output.getvalue()
+        
+        st.download_button(
+            label="📥 Download Plagiarism Report (Excel)",
+            data=processed_data,
+            file_name="plagiarism_report.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_excel_report"
+        )
 
 # ==========================================
 # MODE 2: DEEP DIVE COMPARISON
@@ -236,9 +252,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf"], key="file1")
+        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf"], key="deep_file1")
     with col2:
-        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf"], key="file2")
+        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf"], key="deep_file2")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -313,9 +329,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         return valid_paragraphs
 
     if file1 and file2:
-        analysis_type = st.radio("Select Match Type", ["Sentence Comparison", "Paragraph Comparison"])
+        analysis_type = st.radio("Select Match Type", ["Sentence Comparison", "Paragraph Comparison"], key="deep_match_type")
         
-        if st.button("Run Deep Dive Matcher", type="primary"):
+        if st.button("Run Deep Dive Matcher", type="primary", key="run_deep_dive"):
             path1 = get_file_bytes_temp(file1)
             path2 = get_file_bytes_temp(file2)
             
@@ -326,15 +342,16 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     common_units = sorted(units1.intersection(units2))
                     
                     if not common_units:
-                        st.info("Found 0 matching sentences/lines.")
+                        st.session_state.deep_result_type = "empty_sentences"
                     else:
-                        st.success(f"Found {len(common_units)} matching sentence(s)/line(s)!")
                         report_content = f"Comparison Report: Comparing '{file1.name}' and '{file2.name}'\n"
                         report_content += f"Found {len(common_units)} matching sentences:\n" + "="*70 + "\n\n"
                         for u in common_units: report_content += u + "\n\n"
                         
-                        st.text_area("Matching Sentences Preview", report_content, height=300)
-                        st.download_button("📥 Download Sentence Report (.txt)", data=report_content, file_name="common_sentences_report.txt", mime="text/plain")
+                        st.session_state.deep_result_type = "sentences"
+                        st.session_state.deep_count = len(common_units)
+                        st.session_state.deep_report_content = report_content
+                        st.session_state.deep_filename = "common_sentences_report.txt"
                 
                 else:
                     paras1 = get_document_true_paragraphs(path1, global_reference_text)
@@ -342,20 +359,34 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     common_paras = sorted(set(paras1).intersection(set(paras2)))
                     
                     if not common_paras:
-                        st.info("Found 0 matching paragraphs (with at least 2 sentences).")
+                        st.session_state.deep_result_type = "empty_paras"
                     else:
-                        st.success(f"Found {len(common_paras)} matching paragraph(s)!")
                         report_content = f"Comparison Report: Comparing '{file1.name}' and '{file2.name}'\n"
                         report_content += f"Found {len(common_paras)} matching paragraphs:\n" + "="*70 + "\n\n"
                         for p in common_paras: report_content += p + "\n\n" + "="*50 + "\n\n"
                         
-                        st.text_area("Matching Paragraphs Preview", report_content, height=300)
-                        st.download_button("📥 Download Paragraph Report (.txt)", data=report_content, file_name="common_paragraphs_report.txt", mime="text/plain")
+                        st.session_state.deep_result_type = "paragraphs"
+                        st.session_state.deep_count = len(common_paras)
+                        st.session_state.deep_report_content = report_content
+                        st.session_state.deep_filename = "common_paragraphs_report.txt"
             
             finally:
                 if os.path.exists(path1): os.unlink(path1)
                 if os.path.exists(path2): os.unlink(path2)
-    else:
+
+    # Render deep dive results if they exist in session state
+    if st.session_state.get("deep_result_type") == "empty_sentences":
+        st.info("Found 0 matching sentences/lines.")
+    elif st.session_state.get("deep_result_type") == "empty_paras":
+        st.info("Found 0 matching paragraphs (with at least 2 sentences).")
+    elif st.session_state.get("deep_result_type") in ["sentences", "paragraphs"]:
+        count = st.session_state.deep_count
+        label_text = "matching sentence(s)/line(s)!" if st.session_state.deep_result_type == "sentences" else "matching paragraph(s)!"
+        st.success(f"Found {count} {label_text}")
+        st.text_area("Matching Preview", st.session_state.deep_report_content, height=300, key="deep_preview_area")
+        st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key="download_deep_report")
+
+    if not file1 or not file2:
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
 # ==========================================
