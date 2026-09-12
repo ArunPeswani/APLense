@@ -15,8 +15,76 @@ st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄",
 
 st.title("📄 APLens Plagiarism Suite")
 
-# --- NAVIGATION MENU ---
+# --- GLOBAL SIDEBAR CONTROLS (Persistent across modes) ---
 app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"])
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Global Smart Filtering")
+reference_file = st.sidebar.file_uploader(
+    "Upload Reference/Prompt (Optional)",
+    type=["docx", "pdf", "txt", "rtf"],
+    help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
+)
+
+st.sidebar.markdown("---")
+
+# Reset Button functionality
+if st.sidebar.button("🔄 Reset Everything", type="secondary"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
+
+# Privacy notice placed globally in sidebar
+with st.sidebar.expander("🔒 Data Privacy & Security"):
+    st.write(
+        "**Are my files secure?**\n\n"
+        "Yes! Uploaded documents are processed entirely in memory "
+        "for the duration of your analysis session. "
+        "None of your files or text data are saved, logged, or "
+        "permanently stored on the cloud server.\n\n"
+        "* **Where they live in memory:** The uploaded documents are read into the temporary "
+        "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
+        "server specifically for the duration of that session.\n\n"
+        "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
+        "complete and your report is generated, the application finishes executing that request. In "
+        "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
+        "processing, or they are automatically garbage-collected.\n\n"
+        "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
+        "times out due to inactivity, the Streamlit server completely destroys that active container "
+        "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
+        "Your data remains completely private to your active session and is discarded immediately after "
+        "use, making it safe and secure for checking sensitive submissions!"
+    )
+
+# Helper function to extract text from any file object
+def extract_text_from_file_obj(file_obj, filename_lower):
+    text = ""
+    try:
+        if filename_lower.endswith('.pdf'):
+            reader = PdfReader(file_obj)
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted: text += extracted + " "
+        elif filename_lower.endswith('.docx'):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
+                tmp.write(file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read())
+                tmp_path = tmp.name
+            text = docx2txt.process(tmp_path)
+            os.unlink(tmp_path)
+        elif filename_lower.endswith(('.txt', '.rtf')):
+            content = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
+            text = content.decode('utf-8', errors='ignore')
+    except Exception as e:
+        pass
+    return text
+
+# Extract global reference text if uploaded
+global_reference_text = ""
+if reference_file:
+    # Reset file pointer just in case
+    reference_file.seek(0)
+    global_reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
+
 
 # ==========================================
 # MODE 1: FOLDER PLAGIARISM CHECKER
@@ -28,36 +96,6 @@ if app_mode == "Folder Plagiarism Checker":
     st.sidebar.header("Analysis Settings")
     min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
     max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
-
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Smart Filtering")
-    reference_file = st.sidebar.file_uploader(
-        "Upload Reference/Prompt (Optional)",
-        type=["docx", "pdf", "txt", "rtf"],
-        help="Upload the assignment prompt or syllabus. Common text shared here will be filtered out of student papers."
-    )
-
-    # Privacy notice placed below settings for Folder mode
-    with st.sidebar.expander("🔒 Data Privacy & Security"):
-        st.write(
-            "**Are my files secure?**\n\n"
-            "Yes! Uploaded documents are processed entirely in memory "
-            "for the duration of your analysis session. "
-            "None of your files or text data are saved, logged, or "
-            "permanently stored on the cloud server.\n\n"
-            "* **Where they live in memory:** The uploaded documents are read into the temporary "
-            "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
-            "server specifically for the duration of that session.\n\n"
-            "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
-            "complete and your report is generated, the application finishes executing that request. In "
-            "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
-            "processing, or they are automatically garbage-collected.\n\n"
-            "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
-            "times out due to inactivity, the Streamlit server completely destroys that active container "
-            "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
-            "Your data remains completely private to your active session and is discarded immediately after "
-            "use, making it safe and secure for checking sensitive submissions!"
-        )
 
     upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive / Folder (.zip)"])
 
@@ -75,27 +113,6 @@ if app_mode == "Folder Plagiarism Checker":
             "Upload ZIP Folder Archive containing student submissions",
             type=["zip"]
         )
-
-    def extract_text_from_file_obj(file_obj, filename_lower):
-        text = ""
-        try:
-            if filename_lower.endswith('.pdf'):
-                reader = PdfReader(file_obj)
-                for page in reader.pages:
-                    extracted = page.extract_text()
-                    if extracted: text += extracted + " "
-            elif filename_lower.endswith('.docx'):
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-                    tmp.write(file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read())
-                    tmp_path = tmp.name
-                text = docx2txt.process(tmp_path)
-                os.unlink(tmp_path)
-            elif filename_lower.endswith(('.txt', '.rtf')):
-                content = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
-                text = content.decode('utf-8', errors='ignore')
-        except Exception as e:
-            pass
-        return text
 
     # Process ZIP file if uploaded
     processed_files = []
@@ -122,18 +139,14 @@ if app_mode == "Folder Plagiarism Checker":
                 st.error("Please upload at least 2 documents to perform a comparison.")
             else:
                 with st.spinner("Analyzing documents and calculating similarity matrix..."):
-                    # Extract reference text if provided
-                    reference_text = ""
-                    if reference_file:
-                        reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
-
                     documents, filenames = [], []
                     
                     for file in processed_files:
+                        file.seek(0)
                         txt = extract_text_from_file_obj(file, file.name.lower())
                         if txt.strip():
-                            if reference_text.strip():
-                                prompt_words = set(reference_text.split())
+                            if global_reference_text.strip():
+                                prompt_words = set(global_reference_text.split())
                                 cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
                                 if len(cleaned_txt.strip()) > 50:
                                     txt = cleaned_txt
@@ -156,10 +169,8 @@ if app_mode == "Folder Plagiarism Checker":
                         
                         st.success("Analysis complete!")
                         
-                        # --- VISUAL HEATMAP (Robust graph_objects implementation) ---
+                        # --- VISUAL HEATMAP ---
                         st.subheader("Visual Similarity Heatmap")
-                        
-                        # Format text annotations for the cells
                         text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
                         
                         fig = go.Figure(data=go.Heatmap(
@@ -200,27 +211,9 @@ if app_mode == "Folder Plagiarism Checker":
 elif app_mode == "Deep Dive (2-Doc Comparison)":
     st.header("Deep Dive Matcher")
     st.write("Compare two specific documents to extract exact matching sentences or true paragraphs.")
-
-    with st.sidebar.expander("🔒 Data Privacy & Security"):
-        st.write(
-            "**Are my files secure?**\n\n"
-            "Yes! Uploaded documents are processed entirely in memory "
-            "for the duration of your analysis session. "
-            "None of your files or text data are saved, logged, or "
-            "permanently stored on the cloud server.\n\n"
-            "* **Where they live in memory:** The uploaded documents are read into the temporary "
-            "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
-            "server specifically for the duration of that session.\n\n"
-            "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
-            "complete and your report is generated, the application finishes executing that request. In "
-            "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
-            "processing, or they are automatically garbage-collected.\n\n"
-            "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
-            "times out due to inactivity, the Streamlit server completely destroys that active container "
-            "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
-            "Your data remains completely private to your active session and is discarded immediately after "
-            "use, making it safe and secure for checking sensitive submissions!"
-        )
+    
+    if global_reference_text:
+        st.info("💡 Global Smart Filtering is active: Assignment prompt/reference text will be automatically filtered out during matching.")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -233,7 +226,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             tmp.write(uploaded_file.getvalue())
             return tmp.name
 
-    def get_document_lines_and_sentences(file_path):
+    def get_document_lines_and_sentences(file_path, reference_text=""):
         ext = os.path.splitext(file_path)[1].lower()
         raw_blocks = []
         if ext == '.docx':
@@ -242,20 +235,26 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             raw_blocks = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
         elif ext == '.pdf':
             reader = PdfReader(file_path)
-            full_text = ""
+            full_text_pdf = ""
             for page in reader.pages:
                 extracted = page.extract_text()
-                if extracted: full_text += extracted + "\n\n"
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
+                if extracted: full_text_pdf += extracted + "\n\n"
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                full_text = f.read()
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
+                full_text_txt = f.read()
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
         
+        prompt_words = set(reference_text.split()) if reference_text else set()
         units = set()
         for block in raw_blocks:
             cleaned_block = re.sub(r'\s+', ' ', block)
             if not cleaned_block: continue
+            
+            if prompt_words:
+                cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
+            
+            if not cleaned_block.strip(): continue
             sub_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
             if len(sub_sentences) <= 1:
                 units.add(cleaned_block)
@@ -263,7 +262,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 for s in sub_sentences: units.add(s)
         return units
 
-    def get_document_true_paragraphs(file_path):
+    def get_document_true_paragraphs(file_path, reference_text=""):
         ext = os.path.splitext(file_path)[1].lower()
         raw_blocks = []
         if ext == '.docx':
@@ -272,19 +271,23 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             raw_blocks = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
         elif ext == '.pdf':
             reader = PdfReader(file_path)
-            full_text = ""
+            full_text_pdf = ""
             for page in reader.pages:
                 extracted = page.extract_text()
-                if extracted: full_text += extracted + "\n\n"
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
+                if extracted: full_text_pdf += extracted + "\n\n"
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                full_text = f.read()
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
+                full_text_txt = f.read()
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
         
+        prompt_words = set(reference_text.split()) if reference_text else set()
         valid_paragraphs = []
         for block in raw_blocks:
             cleaned_block = re.sub(r'\s+', ' ', block)
+            if prompt_words:
+                cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
+            
             sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
             if len(sentences) >= 2:
                 valid_paragraphs.append(cleaned_block)
@@ -299,8 +302,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             
             try:
                 if analysis_type == "Sentence Comparison":
-                    units1 = get_document_lines_and_sentences(path1)
-                    units2 = get_document_lines_and_sentences(path2)
+                    units1 = get_document_lines_and_sentences(path1, global_reference_text)
+                    units2 = get_document_lines_and_sentences(path2, global_reference_text)
                     common_units = sorted(units1.intersection(units2))
                     
                     if not common_units:
@@ -315,8 +318,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                         st.download_button("📥 Download Sentence Report (.txt)", data=report_content, file_name="common_sentences_report.txt", mime="text/plain")
                 
                 else:
-                    paras1 = get_document_true_paragraphs(path1)
-                    paras2 = get_document_true_paragraphs(path2)
+                    paras1 = get_document_true_paragraphs(path1, global_reference_text)
+                    paras2 = get_document_true_paragraphs(path2, global_reference_text)
                     common_paras = sorted(set(paras1).intersection(set(paras2)))
                     
                     if not common_paras:
@@ -340,27 +343,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 # MODE 3: USER GUIDE & HELP
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
-    with st.sidebar.expander("🔒 Data Privacy & Security"):
-        st.write(
-            "**Are my files secure?**\n\n"
-            "Yes! Uploaded documents are processed entirely in memory "
-            "for the duration of your analysis session. "
-            "None of your files or text data are saved, logged, or "
-            "permanently stored on the cloud server.\n\n"
-            "* **Where they live in memory:** The uploaded documents are read into the temporary "
-            "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
-            "server specifically for the duration of that session.\n\n"
-            "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
-            "complete and your report is generated, the application finishes executing that request. In "
-            "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
-            "processing, or they are automatically garbage-collected.\n\n"
-            "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
-            "times out due to inactivity, the Streamlit server completely destroys that active container "
-            "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
-            "Your data remains completely private to your active session and is discarded immediately after "
-            "use, making it safe and secure for checking sensitive submissions!"
-        )
-
     st.header("💡 APLens User Guide & Help Center")
     st.write("Welcome to APLens! This guide explains what the program is, how it works, and how to interpret your results.")
 
@@ -376,9 +358,9 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("2. How It Works & Key Features")
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
+        "* **Global Smart Filtering:** Upload an assignment prompt or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
         "* **Flexible Uploads:** Upload individual files or compressed ZIP archives / folders containing `.docx`, `.pdf`, `.txt`, and `.rtf` documents.\n"
         "* **Folder Plagiarism Checker:** Extracts text, tokenizes words via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
-        "* **Smart Prompt/Reference Filtering:** Optionally upload an 'Assignment Instructions' file or syllabus file to filter out shared common boilerplate text automatically.\n"
         "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
         "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences or true multi-sentence paragraphs using custom structural regex matching."
     )
