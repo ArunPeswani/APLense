@@ -24,36 +24,49 @@ st.markdown("""
 
 st.title("📄 APLens Plagiarism Suite")
 
+# Initialize reset counter for widget state management
+if "reset_count" not in st.session_state:
+    st.session_state.reset_count = 0
+
+rc = st.session_state.reset_count
+
 # ==========================================
 # SIDEBAR SETUP (Strict Sequence with Separators)
 # ==========================================
 
-# 1. Navigation Radio Buttons
-app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], key="nav_mode")
+# 1. Navigation Radio Buttons (Dynamic key tied to reset_count)
+app_mode = st.sidebar.radio(
+    "Navigation", 
+    ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], 
+    key=f"nav_mode_{rc}"
+)
 
 st.sidebar.markdown("---")
 
-# 2. Analysis Settings (Sliders)
+# 2. Analysis Settings (Sliders tied to reset_count)
 st.sidebar.subheader("Analysis Settings")
-min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key="min_words")
-max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key="max_words")
+min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key=f"min_words_{rc}")
+max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key=f"max_words_{rc}")
 
 st.sidebar.markdown("---")
 
-# 3. Global Smart Filtering
+# 3. Global Smart Filtering (File uploader tied to reset_count)
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Reference/Prompt (Optional)",
     type=["docx", "pdf", "txt", "rtf"],
-    key="global_ref_file",
+    key=f"global_ref_file_{rc}",
     help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
 )
 
 st.sidebar.markdown("---")
 
-# 4. Reset Button (Deleting all session state keys completely resets widgets and results to defaults)
+# 4. Reset Button (Increments counter to force-recreate widgets and clears all analysis state)
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
-    for key in list(st.session_state.keys()):
+    st.session_state.reset_count += 1
+    # Clear all other session state variables (results, analysis flags, etc.)
+    keys_to_clear = [k for k in list(st.session_state.keys()) if k != "reset_count"]
+    for key in keys_to_clear:
         del st.session_state[key]
     st.rerun()
 
@@ -120,7 +133,7 @@ if app_mode == "Folder Plagiarism Checker":
     st.header("Folder Similarity Matrix Analysis")
     st.write("Upload multiple student submissions or a ZIP archive below to check cross-document similarities.")
 
-    upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive / Folder (.zip)"], key="folder_upload_choice")
+    upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive / Folder (.zip)"], key=f"folder_upload_choice_{rc}")
 
     raw_uploaded_files = []
     zip_uploaded_file = None
@@ -130,13 +143,13 @@ if app_mode == "Folder Plagiarism Checker":
             "Upload Student Submission Documents (.docx, .pdf, .txt, or .rtf)",
             type=["docx", "pdf", "txt", "rtf"],
             accept_multiple_files=True,
-            key="folder_indiv_files"
+            key=f"folder_indiv_files_{rc}"
         )
     else:
         zip_uploaded_file = st.file_uploader(
             "Upload ZIP Folder Archive containing student submissions",
             type=["zip"],
-            key="folder_zip_file"
+            key=f"folder_zip_file_{rc}"
         )
 
     # Process ZIP file if uploaded
@@ -159,7 +172,7 @@ if app_mode == "Folder Plagiarism Checker":
     if processed_files:
         st.info(f"Loaded {len(processed_files)} file(s) successfully.")
         
-        if st.button("Run Plagiarism Analysis", type="primary", key="run_folder_analysis"):
+        if st.button("Run Plagiarism Analysis", type="primary", key=f"run_folder_analysis_{rc}"):
             if len(processed_files) < 2:
                 st.error("Please upload at least 2 documents to perform a comparison.")
             else:
@@ -240,7 +253,7 @@ if app_mode == "Folder Plagiarism Checker":
             data=processed_data,
             file_name="plagiarism_report.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_excel_report"
+            key=f"download_excel_report_{rc}"
         )
 
 # ==========================================
@@ -255,9 +268,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf"], key="deep_file1")
+        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf"], key=f"deep_file1_{rc}")
     with col2:
-        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf"], key="deep_file2")
+        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf"], key=f"deep_file2_{rc}")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -332,9 +345,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         return valid_paragraphs
 
     if file1 and file2:
-        analysis_type = st.radio("Select Match Type", ["Sentence Comparison", "Paragraph Comparison"], key="deep_match_type")
+        analysis_type = st.radio("Select Match Type", ["Sentence Comparison", "Paragraph Comparison"], key=f"deep_match_type_{rc}")
         
-        if st.button("Run Deep Dive Matcher", type="primary", key="run_deep_dive"):
+        if st.button("Run Deep Dive Matcher", type="primary", key=f"run_deep_dive_{rc}"):
             path1 = get_file_bytes_temp(file1)
             path2 = get_file_bytes_temp(file2)
             
@@ -386,8 +399,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         count = st.session_state.deep_count
         label_text = "matching sentence(s)/line(s)!" if st.session_state.deep_result_type == "sentences" else "matching paragraph(s)!"
         st.success(f"Found {count} {label_text}")
-        st.text_area("Matching Preview", st.session_state.deep_report_content, height=300, key="deep_preview_area")
-        st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key="download_deep_report")
+        st.text_area("Matching Preview", st.session_state.deep_report_content, height=300, key=f"deep_preview_area_{rc}")
+        st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_report_{rc}")
 
     if not file1 or not file2:
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
