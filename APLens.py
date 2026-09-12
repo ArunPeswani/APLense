@@ -17,10 +17,7 @@ st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄",
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
-            gap: 0.4rem;
-        }
-        [data-testid="stSidebar"] .stMarkdown {
-            margin-bottom: -0.8rem;
+            gap: 0.2rem;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -28,16 +25,20 @@ st.markdown("""
 st.title("📄 APLens Plagiarism Suite")
 
 # ==========================================
-# SIDEBAR SETUP (Strict Sequence & Compact)
+# SIDEBAR SETUP (Strict Sequence with Separators)
 # ==========================================
 
 # 1. Navigation Radio Buttons
 app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"])
 
+st.sidebar.markdown("---")
+
 # 2. Analysis Settings (Sliders)
 st.sidebar.subheader("Analysis Settings")
 min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
 max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
+
+st.sidebar.markdown("---")
 
 # 3. Global Smart Filtering
 st.sidebar.subheader("Global Smart Filtering")
@@ -47,11 +48,15 @@ reference_file = st.sidebar.file_uploader(
     help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
 )
 
+st.sidebar.markdown("---")
+
 # 4. Reset Button
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
+
+st.sidebar.markdown("---")
 
 # 5. Data Privacy & Security
 with st.sidebar.expander("🔒 Data Privacy & Security"):
