@@ -34,7 +34,7 @@ rc = st.session_state.reset_count
 # SIDEBAR SETUP (Strict Sequence with Separators)
 # ==========================================
 
-# 1. Navigation Radio Buttons (Dynamic key tied to reset_count)
+# 1. Navigation Radio Buttons
 app_mode = st.sidebar.radio(
     "Navigation", 
     ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], 
@@ -43,14 +43,14 @@ app_mode = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 
-# 2. Analysis Settings (Sliders tied to reset_count)
+# 2. Analysis Settings (Sliders)
 st.sidebar.subheader("Analysis Settings")
 min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key=f"min_words_{rc}")
 max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key=f"max_words_{rc}")
 
 st.sidebar.markdown("---")
 
-# 3. Global Smart Filtering (File uploader tied to reset_count)
+# 3. Global Smart Filtering
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Reference/Prompt (Optional)",
@@ -61,10 +61,9 @@ reference_file = st.sidebar.file_uploader(
 
 st.sidebar.markdown("---")
 
-# 4. Reset Button (Increments counter to force-recreate widgets and clears all analysis state)
+# 4. Reset Button
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
     st.session_state.reset_count += 1
-    # Clear all other session state variables (results, analysis flags, etc.)
     keys_to_clear = [k for k in list(st.session_state.keys()) if k != "reset_count"]
     for key in keys_to_clear:
         del st.session_state[key]
@@ -131,11 +130,16 @@ if reference_file:
 # ==========================================
 if app_mode == "Folder Plagiarism Checker":
     st.header("Folder Similarity Matrix Analysis")
-    st.write("Upload multiple student submissions or a ZIP archive below to check cross-document similarities.")
+    st.write("Upload multiple student submissions, a direct folder, or a ZIP archive below to check cross-document similarities.")
 
-    upload_choice = st.radio("Select Upload Type", ["Individual Files", "ZIP Archive / Folder (.zip)"], key=f"folder_upload_choice_{rc}")
+    upload_choice = st.radio(
+        "Select Upload Type", 
+        ["Individual Files", "Direct Folder Selection", "ZIP Archive (.zip)"], 
+        key=f"folder_upload_choice_{rc}"
+    )
 
     raw_uploaded_files = []
+    directory_uploaded_files = []
     zip_uploaded_file = None
 
     if upload_choice == "Individual Files":
@@ -145,6 +149,13 @@ if app_mode == "Folder Plagiarism Checker":
             accept_multiple_files=True,
             key=f"folder_indiv_files_{rc}"
         )
+    elif upload_choice == "Direct Folder Selection":
+        directory_uploaded_files = st.file_uploader(
+            "Select an entire folder containing student submissions",
+            type=["docx", "pdf", "txt", "rtf"],
+            accept_multiple_files="directory",
+            key=f"folder_dir_files_{rc}"
+        )
     else:
         zip_uploaded_file = st.file_uploader(
             "Upload ZIP Folder Archive containing student submissions",
@@ -152,11 +163,15 @@ if app_mode == "Folder Plagiarism Checker":
             key=f"folder_zip_file_{rc}"
         )
 
-    # Process ZIP file if uploaded
+    # Process files based on upload selection
     processed_files = []
     if upload_choice == "Individual Files" and raw_uploaded_files:
         processed_files = raw_uploaded_files
-    elif upload_choice == "ZIP Archive / Folder (.zip)" and zip_uploaded_file:
+    elif upload_choice == "Direct Folder Selection" and directory_uploaded_files:
+        for file_obj in directory_uploaded_files:
+            if file_obj.name.lower().endswith(('docx', 'pdf', 'txt', 'rtf')) and '__MACOSX' not in file_obj.name:
+                processed_files.append(file_obj)
+    elif upload_choice == "ZIP Archive (.zip)" and zip_uploaded_file:
         try:
             with zipfile.ZipFile(zip_uploaded_file, 'r') as z:
                 for filename in z.namelist():
@@ -425,7 +440,7 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Global Smart Filtering:** Upload an assignment prompt or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
-        "* **Flexible Uploads:** Upload individual files or compressed ZIP archives / folders containing `.docx`, `.pdf`, `.txt`, and `.rtf` documents.\n"
+        "* **Flexible Uploads:** Upload individual files, an entire folder directly, or compressed ZIP archives containing `.docx`, `.pdf`, `.txt`, and `.rtf` documents.\n"
         "* **Folder Plagiarism Checker:** Extracts text, tokenizes words via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
         "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
         "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences or true multi-sentence paragraphs using custom structural regex matching."
