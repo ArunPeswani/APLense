@@ -28,8 +28,8 @@ st.title("📄 APLens Plagiarism Suite")
 # SIDEBAR SETUP (Strict Sequence with Separators)
 # ==========================================
 
-# 1. Navigation Radio Buttons
-app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"])
+# 1. Navigation Radio Buttons (with explicit key for full reset control)
+app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], key="nav_mode")
 
 st.sidebar.markdown("---")
 
@@ -43,7 +43,7 @@ st.sidebar.markdown("---")
 # 3. Global Smart Filtering
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
-    "Upload Assignment Instructions File Here (Optional)",
+    "Upload Reference/Prompt (Optional)",
     type=["docx", "pdf", "txt", "rtf"],
     key="global_ref_file",
     help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
@@ -51,7 +51,7 @@ reference_file = st.sidebar.file_uploader(
 
 st.sidebar.markdown("---")
 
-# 4. Reset Button
+# 4. Reset Button (Wipes all session state keys to reset everything)
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
@@ -59,7 +59,7 @@ if st.sidebar.button("🔄 Reset Everything", type="secondary"):
 
 st.sidebar.markdown("---")
 
-# 5. Data Privacy & Security (Polished with navigation lifecycle)
+# 5. Data Privacy & Security
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
         "**Are my files secure?**\n\n"
