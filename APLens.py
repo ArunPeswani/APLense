@@ -11,7 +11,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄", layout="centered")
 
-st.title("📄 APLens Plagiarism Suite")
+st.title("📄 APLens - Plagiarism Suite")
 
 # --- NAVIGATION MENU ---
 app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"])
@@ -280,7 +280,7 @@ elif app_mode == "💡 User Guide & Help":
             "use, making it safe and secure for checking sensitive submissions!"
         )
 
-    st.header("💡 APLens User Guide & Help Center")
+    st.header("💡 APLens - User Guide & Help Center")
     st.write("Welcome to APLens! This guide explains what the program is, how it works, and how to interpret your results.")
 
     st.markdown("---")
