@@ -18,14 +18,20 @@ app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Di
 
 # --- SIDEBAR PRIVACY NOTICE ---
 with st.sidebar.expander("🔒 Data Privacy & Security"):
-    st.write(
-        "**Are my files secure?**\n\n"
-        "Yes! Uploaded documents are processed entirely in memory "
-        "for the duration of your analysis session. "
-        "None of your files or text data are saved, logged, or "
-        "permanently stored on the cloud server."
+    st.markdown(
+        "* **Where they live in memory:** The uploaded documents are read into the temporary "
+        "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
+        "server specifically for the duration of that session.\n\n"
+        "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
+        "complete and your report is generated, the application finishes executing that request. In "
+        "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
+        "processing, or they are automatically garbage-collected.\n\n"
+        "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
+        "times out due to inactivity, the Streamlit server completely destroys that active container "
+        "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
+        "Your data remains completely private to your active session and is discarded immediately after "
+        "use, making it safe and secure for checking sensitive submissions!"
     )
-
 # ==========================================
 # MODE 1: FOLDER PLAGIARISM CHECKER
 # ==========================================
