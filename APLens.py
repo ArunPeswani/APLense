@@ -13,10 +13,7 @@ st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄",
 
 st.title("📄 APLens Plagiarism Suite")
 
-# --- NAVIGATION MENU ---
-app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)"])
-
-# --- SIDEBAR PRIVACY NOTICE (Visible Everywhere) ---
+# --- SIDEBAR PRIVACY NOTICE (Visible Everywhere, Positioned on Top) ---
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
         "**Are my files secure?**\n\n"
@@ -37,6 +34,11 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "Your data remains completely private to your active session and is discarded immediately after "
         "use, making it safe and secure for checking sensitive submissions!"
     )
+
+st.sidebar.markdown("---")
+
+# --- NAVIGATION MENU ---
+app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)"])
 
 # ==========================================
 # MODE 1: FOLDER PLAGIARISM CHECKER
