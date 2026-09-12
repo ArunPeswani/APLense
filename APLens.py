@@ -51,14 +51,10 @@ reference_file = st.sidebar.file_uploader(
 
 st.sidebar.markdown("---")
 
-# 4. Reset Button (Forces explicit defaults for navigation, sliders, and clears files/results)
+# 4. Reset Button (Clears all keys so widgets and states safely revert to their defaults)
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
-    st.session_state.nav_mode = "Folder Plagiarism Checker"
-    st.session_state.min_words = 4
-    st.session_state.max_words = 6
-    keys_to_clear = [k for k in list(st.session_state.keys()) if k not in ["nav_mode", "min_words", "max_words"]]
-    for k in keys_to_clear:
-        del st.session_state[k]
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
     st.rerun()
 
 st.sidebar.markdown("---")
