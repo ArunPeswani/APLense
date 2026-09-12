@@ -33,7 +33,7 @@ if app_mode == "Folder Plagiarism Checker":
     st.sidebar.subheader("Smart Filtering")
     reference_file = st.sidebar.file_uploader(
         "Upload Reference/Prompt (Optional)",
-        type=["docx", "pdf", "txt"],
+        type=["docx", "pdf", "txt", "rtf"],
         help="Upload the assignment prompt or syllabus. Common text shared here will be filtered out of student papers."
     )
 
@@ -66,8 +66,8 @@ if app_mode == "Folder Plagiarism Checker":
 
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, or .txt)",
-            type=["docx", "pdf", "txt"],
+            "Upload Student Submission Documents (.docx, .pdf, .txt, or .rtf)",
+            type=["docx", "pdf", "txt", "rtf"],
             accept_multiple_files=True
         )
     else:
@@ -90,7 +90,7 @@ if app_mode == "Folder Plagiarism Checker":
                     tmp_path = tmp.name
                 text = docx2txt.process(tmp_path)
                 os.unlink(tmp_path)
-            elif filename_lower.endswith('.txt'):
+            elif filename_lower.endswith(('.txt', '.rtf')):
                 content = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
                 text = content.decode('utf-8', errors='ignore')
         except Exception as e:
@@ -105,7 +105,7 @@ if app_mode == "Folder Plagiarism Checker":
         try:
             with zipfile.ZipFile(zip_uploaded_file, 'r') as z:
                 for filename in z.namelist():
-                    if filename.lower().endswith(('docx', 'pdf', 'txt')) and not filename.startswith('__MACOSX/'):
+                    if filename.lower().endswith(('docx', 'pdf', 'txt', 'rtf')) and not filename.startswith('__MACOSX/'):
                         with z.open(filename) as f:
                             file_bytes = io.BytesIO(f.read())
                             file_bytes.name = os.path.basename(filename)
@@ -132,11 +132,8 @@ if app_mode == "Folder Plagiarism Checker":
                     for file in processed_files:
                         txt = extract_text_from_file_obj(file, file.name.lower())
                         if txt.strip():
-                            # Remove reference/prompt boilerplate if enabled
                             if reference_text.strip():
-                                # Simple regex or keyword replacement for prompt filtering
                                 prompt_words = set(reference_text.split())
-                                # Filter out sentences heavily saturated with prompt words or clean directly
                                 cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
                                 if len(cleaned_txt.strip()) > 50:
                                     txt = cleaned_txt
@@ -159,14 +156,15 @@ if app_mode == "Folder Plagiarism Checker":
                         
                         st.success("Analysis complete!")
                         
-                        # --- VISUAL HEATMAP ---
+                        # --- VISUAL HEATMAP (Fixed with zmin/zmax) ---
                         st.subheader("Visual Similarity Heatmap")
                         fig = px.imshow(
                             df,
                             text_auto=".1f",
                             color_continuousscale="Reds",
                             labels=dict(color="Similarity %"),
-                            range_color=[0, 100]
+                            zmin=0,
+                            zmax=100
                         )
                         fig.update_layout(height=500, margin=dict(l=20, r=20, t=20, b=20))
                         st.plotly_chart(fig, use_container_width=True)
@@ -216,9 +214,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt"], key="file1")
+        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf"], key="file1")
     with col2:
-        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt"], key="file2")
+        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf"], key="file2")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -239,7 +237,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted: full_text += extracted + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
-        elif ext == '.txt':
+        elif ext in ('.txt', '.rtf'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 full_text = f.read()
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
@@ -269,7 +267,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted: full_text += extracted + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
-        elif ext == '.txt':
+        elif ext in ('.txt', '.rtf'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 full_text = f.read()
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text) if b.strip()]
@@ -368,7 +366,7 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("2. How It Works")
     st.write(
         "APLens offers multiple advanced analysis modes:\n\n"
-        "* **Folder Plagiarism Checker:** Upload individual submissions or a `.zip` folder archive. The app extracts "
+        "* **Folder Plagiarism Checker:** Upload individual submissions or a `.zip` folder archive (supporting `.docx`, `.pdf`, `.txt`, and `.rtf` formats). The app extracts "
         "text, filters out optional prompt boilerplate, converts words into token vectors using **TF-IDF**, "
         "and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
         "* **Visual Heatmap:** An interactive color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly.\n"
