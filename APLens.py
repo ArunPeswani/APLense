@@ -11,7 +11,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄", layout="centered")
 
-st.title("📄 APLens - Plagiarism Suite")
+st.title("📄 APLens Plagiarism Suite")
 
 # --- NAVIGATION MENU ---
 app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"])
@@ -280,7 +280,7 @@ elif app_mode == "💡 User Guide & Help":
             "use, making it safe and secure for checking sensitive submissions!"
         )
 
-    st.header("💡 APLens - User Guide & Help Center")
+    st.header("💡 APLens User Guide & Help Center")
     st.write("Welcome to APLens! This guide explains what the program is, how it works, and how to interpret your results.")
 
     st.markdown("---")
@@ -289,7 +289,7 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "APLens is a specialized peer-to-peer plagiarism detection and document comparison web suite designed "
         "for educators, instructors, and researchers. It allows you to analyze a batch of student submissions "
-        "to find cross-cross-document similarities or perform deep-dive text matches between two specific files."
+        "to find cross-document similarities or perform deep-dive text matches between two specific files."
     )
 
     st.subheader("2. How It Works")
@@ -313,4 +313,10 @@ elif app_mode == "💡 User Guide & Help":
         "is being compared against itself.\n"
         "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., 40% to 90%+). A high score "
         "means those two particular student submissions share substantial matching text sequences and warrant a closer manual review."
+    )
+
+    st.subheader("4. Support, Contact & Feedback")
+    st.write(
+        "If you encounter any issues, require assistance, or have ideas on how to make APLens even better, please feel free to reach out. "
+        "You can contact **Arun Peswani** for any help required. Your suggestions, feedback, and feature requests are always warmly welcomed!"
     )
