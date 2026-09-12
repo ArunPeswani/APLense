@@ -14,14 +14,14 @@ st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄",
 st.title("📄 APLens Plagiarism Suite")
 
 # --- NAVIGATION MENU ---
-app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)"])
+app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "📖 User Guide & Help"])
 
 # ==========================================
 # MODE 1: FOLDER PLAGIARISM CHECKER
 # ==========================================
 if app_mode == "Folder Plagiarism Checker":
     st.header("Folder Similarity Matrix Analysis")
-    st.write("Upload multiple student submission documents (only .docx or .pdf) below to check cross-document similarities.")
+    st.write("Upload multiple student submissions below to check cross-document similarities.")
 
     st.sidebar.header("Analysis Settings")
     min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
@@ -50,7 +50,7 @@ if app_mode == "Folder Plagiarism Checker":
         )
 
     uploaded_files = st.file_uploader(
-        "PDF files should be text based only. Scanned images will not produce desired results.",
+        "Upload Student Submission Documents (.docx or .pdf only). PDFs should be text based only. Scanned images will not produce desired results.",
         type=["docx", "pdf"],
         accept_multiple_files=True
     )
@@ -253,3 +253,64 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 if os.path.exists(path2): os.unlink(path2)
     else:
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
+
+# ==========================================
+# MODE 3: USER GUIDE & HELP
+# ==========================================
+elif app_mode == "📖 User Guide & Help":
+    # Privacy notice placed in sidebar for Help mode as well
+    with st.sidebar.expander("🔒 Data Privacy & Security"):
+        st.write(
+            "**Are my files secure?**\n\n"
+            "Yes! Uploaded documents are processed entirely in memory "
+            "for the duration of your analysis session. "
+            "None of your files or text data are saved, logged, or "
+            "permanently stored on the cloud server.\n\n"
+            "* **Where they live in memory:** The uploaded documents are read into the temporary "
+            "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
+            "server specifically for the duration of that session.\n\n"
+            "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
+            "complete and your report is generated, the application finishes executing that request. In "
+            "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
+            "processing, or they are automatically garbage-collected.\n\n"
+            "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
+            "times out due to inactivity, the Streamlit server completely destroys that active container "
+            "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
+            "Your data remains completely private to your active session and is discarded immediately after "
+            "use, making it safe and secure for checking sensitive submissions!"
+        )
+
+    st.header("📖 APLens User Guide & Help Center")
+    st.write("Welcome to APLens! This guide explains what the program is, how it works, and how to interpret your results.")
+
+    st.markdown("---")
+
+    st.subheader("1. What is APLens & What Does It Do?")
+    st.write(
+        "APLens is a specialized peer-to-peer plagiarism detection and document comparison web suite designed "
+        "for educators, instructors, and researchers. It allows you to analyze a batch of student submissions "
+        "to find cross-document similarities or perform deep-dive text matches between two specific files."
+    )
+
+    st.subheader("2. How It Works")
+    st.write(
+        "APLens offers two distinct analysis modes:\n\n"
+        "* **Folder Plagiarism Checker:** Upload multiple `.docx` or `.pdf` files simultaneously. The app extracts "
+        "their text, converts words into numerical token vectors using **TF-IDF (Term Frequency-Inverse Document Frequency)**, "
+        "and calculates a **Cosine Similarity** percentage matrix across every possible pair of documents.\n"
+        "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences "
+        "or true multi-sentence paragraphs using custom structural regex matching."
+    )
+
+    st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
+    st.write(
+        "When you run the **Folder Plagiarism Checker**, you can download an Excel report (`plagiarism_report.xlsx`). Here is how to read it:\n\n"
+        "* **The Matrix Structure:** The Excel spreadsheet is a symmetric cross-comparison table. Both the **Rows** and **Columns** "
+        "represent the file names of the uploaded student submissions.\n"
+        "* **Reading Cell Values:** Each cell contains a percentage value (from 0% to 100%) indicating how much textual overlap exists "
+        "between the document in that row and the document in that column.\n"
+        "* **The Diagonal (100%):** The cells running diagonally from top-left to bottom-right will always show **100%**, because a document "
+        "is being compared against itself.\n"
+        "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., 40% to 90%+). A high score "
+        "means those two particular student submissions share substantial matching text sequences and warrant a closer manual review."
+    )
