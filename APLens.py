@@ -15,10 +15,31 @@ st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄",
 
 st.title("📄 APLens Plagiarism Suite")
 
-# --- NAVIGATION MENU ---
+# ==========================================
+# SIDEBAR SETUP (Strict Sequence)
+# ==========================================
+
+# 1. Navigation Radio Buttons
 app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"])
 
 st.sidebar.markdown("---")
+
+# 2. Analysis Settings (Sliders)
+st.sidebar.subheader("Analysis Settings")
+min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
+max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
+
+st.sidebar.markdown("---")
+
+# 3. Reset Button
+if st.sidebar.button("🔄 Reset Everything", type="secondary"):
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
+
+st.sidebar.markdown("---")
+
+# 4. Global Smart Filtering
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Reference/Prompt (Optional)",
@@ -28,20 +49,7 @@ reference_file = st.sidebar.file_uploader(
 
 st.sidebar.markdown("---")
 
-# --- ANALYSIS SETTINGS (Placed between Smart Filtering & Reset/Help) ---
-st.sidebar.subheader("Analysis Settings")
-min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4)
-max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
-
-st.sidebar.markdown("---")
-
-# Reset Button functionality
-if st.sidebar.button("🔄 Reset Everything", type="secondary"):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    st.rerun()
-
-# Privacy notice placed globally in sidebar
+# 5. Data Privacy & Security
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
         "**Are my files secure?**\n\n"
