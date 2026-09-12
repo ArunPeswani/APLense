@@ -30,7 +30,7 @@ if app_mode == "Folder Plagiarism Checker":
     # --- SIDEBAR PRIVACY NOTICE ---
     with st.sidebar.expander("🔒 Data Privacy & Security"):
         st.write(
-            "**Are my files secure?**\n\n"
+            "**Hey Arun! Are my files secure?**\n\n"
             "Yes! Uploaded documents are processed entirely in memory "
             "for the duration of your analysis session. "
             "None of your files or text data are saved, logged, or "
