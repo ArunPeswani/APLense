@@ -14,7 +14,7 @@ st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄",
 st.title("📄 APLens Plagiarism Suite")
 
 # --- NAVIGATION MENU ---
-app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "📖 User Guide & Help"])
+app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"])
 
 # ==========================================
 # MODE 1: FOLDER PLAGIARISM CHECKER
@@ -257,7 +257,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 # ==========================================
 # MODE 3: USER GUIDE & HELP
 # ==========================================
-elif app_mode == "📖 User Guide & Help":
+elif app_mode == "💡 User Guide & Help":
     # Privacy notice placed in sidebar for Help mode as well
     with st.sidebar.expander("🔒 Data Privacy & Security"):
         st.write(
@@ -280,7 +280,7 @@ elif app_mode == "📖 User Guide & Help":
             "use, making it safe and secure for checking sensitive submissions!"
         )
 
-    st.header("📖 APLens User Guide & Help Center")
+    st.header("💡 APLens User Guide & Help Center")
     st.write("Welcome to APLens! This guide explains what the program is, how it works, and how to interpret your results.")
 
     st.markdown("---")
@@ -289,7 +289,7 @@ elif app_mode == "📖 User Guide & Help":
     st.write(
         "APLens is a specialized peer-to-peer plagiarism detection and document comparison web suite designed "
         "for educators, instructors, and researchers. It allows you to analyze a batch of student submissions "
-        "to find cross-document similarities or perform deep-dive text matches between two specific files."
+        "to find cross-cross-document similarities or perform deep-dive text matches between two specific files."
     )
 
     st.subheader("2. How It Works")
