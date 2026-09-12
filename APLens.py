@@ -3,7 +3,7 @@ import os
 import zipfile
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 from pypdf import PdfReader
 import docx2txt
 import tempfile
@@ -156,19 +156,27 @@ if app_mode == "Folder Plagiarism Checker":
                         
                         st.success("Analysis complete!")
                         
-                        # --- VISUAL HEATMAP (Fixed with raw array & explicit axes) ---
+                        # --- VISUAL HEATMAP (Robust graph_objects implementation) ---
                         st.subheader("Visual Similarity Heatmap")
-                        fig = px.imshow(
-                            similarity_matrix,
+                        
+                        # Format text annotations for the cells
+                        text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
+                        
+                        fig = go.Figure(data=go.Heatmap(
+                            z=similarity_matrix,
                             x=filenames,
                             y=filenames,
-                            text_auto=".1f",
-                            color_continuousscale="Reds",
-                            labels=dict(color="Similarity %"),
+                            text=text_annotations,
+                            texttemplate="%{text}",
+                            colorscale="Reds",
                             zmin=0,
                             zmax=100
+                        ))
+                        fig.update_layout(
+                            height=500, 
+                            margin=dict(l=20, r=20, t=20, b=20),
+                            xaxis=dict(tickangle=-45)
                         )
-                        fig.update_layout(height=500, margin=dict(l=20, r=20, t=20, b=20))
                         st.plotly_chart(fig, use_container_width=True)
 
                         st.subheader("Similarity Matrix Report (%)")
