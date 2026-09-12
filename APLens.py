@@ -378,7 +378,7 @@ elif app_mode == "💡 User Guide & Help":
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Flexible Uploads:** Upload individual files or compressed ZIP archives / folders containing `.docx`, `.pdf`, `.txt`, and `.rtf` documents.\n"
         "* **Folder Plagiarism Checker:** Extracts text, tokenizes words via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
-        "* **Smart Prompt/Reference Filtering:** Optionally upload an "Assignment Instructions" file or syllabus file to filter out shared common boilerplate text automatically.\n"
+        "* **Smart Prompt/Reference Filtering:** Optionally upload an assignment prompt or syllabus file to filter out shared common boilerplate text automatically.\n"
         "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
         "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences or true multi-sentence paragraphs using custom structural regex matching."
     )
