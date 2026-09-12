@@ -50,7 +50,7 @@ if app_mode == "Folder Plagiarism Checker":
     max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6)
 
     uploaded_files = st.file_uploader(
-        "Upload Student Documents (.docx or .pdf)",
+        "Upload Student Submission Documents (.docx or .pdf only). PDFs should be text based only. Scanned images will not produce desired results.",
         type=["docx", "pdf"],
         accept_multiple_files=True
     )
