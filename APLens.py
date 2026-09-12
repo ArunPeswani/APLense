@@ -51,7 +51,7 @@ reference_file = st.sidebar.file_uploader(
 
 st.sidebar.markdown("---")
 
-# 4. Reset Button (Clears all keys so widgets and states safely revert to their defaults)
+# 4. Reset Button (Deleting all session state keys completely resets widgets and results to defaults)
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
     for key in list(st.session_state.keys()):
         del st.session_state[key]
@@ -59,7 +59,7 @@ if st.sidebar.button("🔄 Reset Everything", type="secondary"):
 
 st.sidebar.markdown("---")
 
-# 5. Data Privacy & Security (Polished with navigation lifecycle)
+# 5. Data Privacy & Security
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
         "**Are my files secure?**\n\n"
