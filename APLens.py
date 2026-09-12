@@ -18,7 +18,12 @@ app_mode = st.sidebar.radio("Navigation", ["Folder Plagiarism Checker", "Deep Di
 
 # --- SIDEBAR PRIVACY NOTICE ---
 with st.sidebar.expander("🔒 Data Privacy & Security"):
-    st.markdown(
+    st.write(
+        "**Are my files secure?**\n\n"
+        "Yes! Uploaded documents are processed entirely in memory "
+        "for the duration of your analysis session. "
+        "None of your files or text data are saved, logged, or "
+        "permanently stored on the cloud server.\n\n"
         "* **Where they live in memory:** The uploaded documents are read into the temporary "
         "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
         "server specifically for the duration of that session.\n\n"
@@ -31,7 +36,11 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
         "Your data remains completely private to your active session and is discarded immediately after "
         "use, making it safe and secure for checking sensitive submissions!"
+
     )
+
+    #st.markdown(
+
 # ==========================================
 # MODE 1: FOLDER PLAGIARISM CHECKER
 # ==========================================
