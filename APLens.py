@@ -283,7 +283,7 @@ elif app_mode == "💡 User Guide & Help":
     st.header("💡 APLens User Guide & Help Center")
     st.write("Welcome to APLens! This guide explains what the program is, how it works, and how to interpret your results.")
 
-    st.markdown("---")
+    st.markdown("--")
 
     st.subheader("1. What is APLens & What Does It Do?")
     st.write(
