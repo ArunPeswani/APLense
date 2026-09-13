@@ -96,7 +96,7 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "use, making it safe and secure for checking sensitive submissions!"
     )
 
-# Helper function to extract text from any file object (including Excel multi-sheets)
+# Helper function to extract text from any file object (robust Excel & document parser)
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
     try:
@@ -118,10 +118,15 @@ def extract_text_from_file_obj(file_obj, filename_lower):
             file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             for sheet_name in xls.sheet_names:
-                df = pd.read_excel(xls, sheet_name=sheet_name)
-                # Convert all cell values to strings and concatenate
-                sheet_text = df.astype(str).values.flatten()
-                text += f" [Sheet: {sheet_name}] " + " ".join(sheet_text) + " "
+                df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+                # Filter out nan, None, and empty strings, keeping valid text and numbers
+                tokens = []
+                for val in df.values.flatten():
+                    if pd.notna(val):
+                        val_str = str(val).strip()
+                        if val_str and val_str.lower() != 'nan':
+                            tokens.append(val_str)
+                text += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " "
     except Exception as e:
         pass
     return text
@@ -217,7 +222,7 @@ if app_mode == "Plagiarism Checker":
                             filenames.append(file.name)
                     
                     if len(documents) < 2:
-                        st.error("Not enough valid text found in the uploaded documents.")
+                        st.error(f"Not enough valid text found in the uploaded documents. Extracted lengths: {[len(d) for d in documents]}")
                     else:
                         vectorizer = TfidfVectorizer(
                             stop_words='english', 
@@ -323,9 +328,14 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             xls = pd.ExcelFile(file_path)
             full_text_excel = ""
             for sheet_name in xls.sheet_names:
-                df = pd.read_excel(xls, sheet_name=sheet_name)
-                sheet_text = " ".join(df.astype(str).values.flatten())
-                full_text_excel += f" {sheet_text} "
+                df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+                tokens = []
+                for val in df.values.flatten():
+                    if pd.notna(val):
+                        val_str = str(val).strip()
+                        if val_str and val_str.lower() != 'nan':
+                            tokens.append(val_str)
+                full_text_excel += f" {' '.join(tokens)} \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
@@ -367,9 +377,14 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             xls = pd.ExcelFile(file_path)
             full_text_excel = ""
             for sheet_name in xls.sheet_names:
-                df = pd.read_excel(xls, sheet_name=sheet_name)
-                sheet_text = " ".join(df.astype(str).values.flatten())
-                full_text_excel += f" {sheet_text} "
+                df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+                tokens = []
+                for val in df.values.flatten():
+                    if pd.notna(val):
+                        val_str = str(val).strip()
+                        if val_str and val_str.lower() != 'nan':
+                            tokens.append(val_str)
+                full_text_excel += f" {' '.join(tokens)} \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
