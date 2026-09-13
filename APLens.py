@@ -330,30 +330,32 @@ if app_mode == "Plagiarism Checker":
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
-        # --- PLOTLY INTERACTIVE FLUID HEATMAP ---
+        # --- SCROLLABLE & CLEAN TRUNCATED HEATMAP ---
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use Plotly's toolbar on the top right of the chart to zoom, pan, or download the view.*")
+        st.write("💡 *Tip: Use the scrollbars and Plotly toolbar to navigate across the matrix. Hover over any cell to see full names and exact scores.*")
         
-        text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
+        truncated_names = [name if len(name) <= 20 else name[:17] + "..." for name in filenames]
+        chart_dimension = max(900, total_files * 25)
         
         fig = go.Figure(data=go.Heatmap(
             z=similarity_matrix,
-            x=filenames,
-            y=filenames,
-            text=text_annotations,
-            texttemplate=None,
+            x=truncated_names,
+            y=truncated_names,
+            customdata=filenames,
+            hovertemplate="<b>Row:</b> %{y}<br><b>Col:</b> %{x}<br><b>Similarity:</b> %{z:.1f}%<extra></extra>",
             colorscale="Reds" if "Paraphrase" not in run_label else "Oranges",
             zmin=0,
             zmax=100
         ))
         fig.update_layout(
-            height=650,
+            width=chart_dimension,
+            height=chart_dimension,
             margin=dict(l=150, r=50, t=50, b=150),
             xaxis=dict(tickangle=-45),
             yaxis=dict(autorange='reversed')
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=False)
 
         st.subheader("Similarity Matrix Report (%)")
         st.dataframe(df.style.format("{:.2f}%"))
