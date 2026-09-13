@@ -54,9 +54,9 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
-    type=["docx", "pdf", "txt", "rtf", "md"],
+    type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"],
     key=f"global_ref_file_{rc}",
-    help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
+    help="Upload the assignment prompt or reference file once. It will be applied across analysis modes!"
 )
 
 st.sidebar.markdown("---")
@@ -96,7 +96,7 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "use, making it safe and secure for checking sensitive submissions!"
     )
 
-# Helper function to extract text from any file object
+# Helper function to extract text from any file object (including Excel multi-sheets)
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
     try:
@@ -114,6 +114,14 @@ def extract_text_from_file_obj(file_obj, filename_lower):
         elif filename_lower.endswith(('.txt', '.rtf', '.md')):
             content = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
             text = content.decode('utf-8', errors='ignore')
+        elif filename_lower.endswith(('.xlsx', '.xls')):
+            file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
+            xls = pd.ExcelFile(io.BytesIO(file_bytes))
+            for sheet_name in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet_name)
+                # Convert all cell values to strings and concatenate
+                sheet_text = df.astype(str).values.flatten()
+                text += f" [Sheet: {sheet_name}] " + " ".join(sheet_text) + " "
     except Exception as e:
         pass
     return text
@@ -130,7 +138,7 @@ if reference_file:
 # ==========================================
 if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
-    st.write("Upload multiple student submissions, a direct folder, or a ZIP archive below to check cross-document similarities.")
+    st.write("Upload multiple student submissions (including Word, PDF, Excel, Markdown), a direct folder, or a ZIP archive below.")
 
     upload_choice = st.radio(
         "Select Upload Type", 
@@ -141,18 +149,19 @@ if app_mode == "Plagiarism Checker":
     raw_uploaded_files = []
     directory_uploaded_files = []
     zip_uploaded_file = None
+    supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls")
 
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, or .md)",
-            type=["docx", "pdf", "txt", "rtf", "md"],
+            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls)",
+            type=list(supported_exts),
             accept_multiple_files=True,
             key=f"folder_indiv_files_{rc}"
         )
     elif upload_choice == "Direct Folder Selection":
         directory_uploaded_files = st.file_uploader(
             "Select an entire folder containing student submissions",
-            type=["docx", "pdf", "txt", "rtf", "md"],
+            type=list(supported_exts),
             accept_multiple_files="directory",
             key=f"folder_dir_files_{rc}"
         )
@@ -169,13 +178,13 @@ if app_mode == "Plagiarism Checker":
         processed_files = raw_uploaded_files
     elif upload_choice == "Direct Folder Selection" and directory_uploaded_files:
         for file_obj in directory_uploaded_files:
-            if file_obj.name.lower().endswith(('docx', 'pdf', 'txt', 'rtf', 'md')) and '__MACOSX' not in file_obj.name:
+            if file_obj.name.lower().endswith(supported_exts) and '__MACOSX' not in file_obj.name:
                 processed_files.append(file_obj)
     elif upload_choice == "ZIP Archive (.zip)" and zip_uploaded_file:
         try:
             with zipfile.ZipFile(zip_uploaded_file, 'r') as z:
                 for filename in z.namelist():
-                    if filename.lower().endswith(('docx', 'pdf', 'txt', 'rtf', 'md')) and not filename.startswith('__MACOSX/'):
+                    if filename.lower().endswith(supported_exts) and not filename.startswith('__MACOSX/'):
                         with z.open(filename) as f:
                             file_bytes = io.BytesIO(f.read())
                             file_bytes.name = os.path.basename(filename)
@@ -276,16 +285,16 @@ if app_mode == "Plagiarism Checker":
 # ==========================================
 elif app_mode == "Deep Dive (2-Doc Comparison)":
     st.header("Deep Dive Matcher")
-    st.write("Compare two specific documents to extract exact matching sentences or true paragraphs.")
+    st.write("Compare two specific documents (including Excel sheets, Word, PDF) to extract exact matching sentences or true paragraphs.")
     
     if global_reference_text:
         st.info("💡 Global Smart Filtering is active: Assignment prompt/reference text will be automatically filtered out during matching.")
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf", "md"], key=f"deep_file1_{rc}")
+        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"], key=f"deep_file1_{rc}")
     with col2:
-        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf", "md"], key=f"deep_file2_{rc}")
+        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"], key=f"deep_file2_{rc}")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -310,6 +319,14 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 full_text_txt = f.read()
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
+        elif ext in ('.xlsx', '.xls'):
+            xls = pd.ExcelFile(file_path)
+            full_text_excel = ""
+            for sheet_name in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet_name)
+                sheet_text = " ".join(df.astype(str).values.flatten())
+                full_text_excel += f" {sheet_text} "
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
         units = set()
@@ -346,6 +363,14 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 full_text_txt = f.read()
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
+        elif ext in ('.xlsx', '.xls'):
+            xls = pd.ExcelFile(file_path)
+            full_text_excel = ""
+            for sheet_name in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet_name)
+                sheet_text = " ".join(df.astype(str).values.flatten())
+                full_text_excel += f" {sheet_text} "
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
         valid_paragraphs = []
@@ -440,8 +465,8 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Global Smart Filtering:** Upload an assignment instructions file or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
-        "* **Flexible Uploads:** Upload individual files, an entire folder directly, or compressed ZIP archives containing `.docx`, `.pdf`, `.txt`, `.rtf`, and `.md` documents.\n"
-        "* **Plagiarism Checker:** Extracts text, tokenizes words via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
+        "* **Flexible Uploads:** Upload individual files, an entire folder directly, or compressed ZIP archives containing `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` documents.\n"
+        "* **Plagiarism Checker:** Extracts text and values across all sheets in spreadsheets or document pages via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
         "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
         "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences or true multi-sentence paragraphs using custom structural regex matching."
     )
