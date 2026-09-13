@@ -6,3 +6,5 @@ python-docx
 docx2txt
 pypdf
 plotly
+matplotlib
+seaborn
