@@ -14,11 +14,18 @@ import difflib
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄", layout="centered")
 
-# --- COMPACT SIDEBAR CSS ---
+# --- COMPACT SIDEBAR CSS & CUSTOM BADGES ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
             gap: 0.2rem;
+        }
+        .metric-card {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -44,10 +51,11 @@ app_mode = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 
-# 2. Analysis Settings (Sliders)
+# 2. Analysis Settings (Sliders & Threshold Warning)
 st.sidebar.subheader("Analysis Settings")
 min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key=f"min_words_{rc}")
 max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key=f"max_words_{rc}")
+similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_value=10, max_value=100, value=40, step=5, key=f"sim_threshold_{rc}", help="Pairs exceeding this similarity percentage will be flagged as high risk.")
 
 st.sidebar.markdown("---")
 
@@ -272,6 +280,31 @@ if app_mode == "Plagiarism Checker":
 
         st.success(f"{run_label} Complete!")
         
+        # --- METRICS & SUMMARY CARDS (UI Enhancement) ---
+        total_files = len(filenames)
+        flat_scores = [similarity_matrix[i][j] for i in range(total_files) for j in range(total_files) if i != j]
+        max_sim = max(flat_scores) if flat_scores else 0.0
+        avg_sim = sum(flat_scores) / len(flat_scores) if flat_scores else 0.0
+        
+        # Count high-risk pairs exceeding threshold
+        flagged_pairs_count = sum(1 for score in flat_scores if score >= similarity_threshold)
+
+        mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+        with mcol1:
+            st.metric("📁 Files Scanned", total_files)
+        with mcol2:
+            st.metric("📈 Max Similarity", f"{max_sim:.1f}%")
+        with mcol3:
+            st.metric("📊 Average Similarity", f"{avg_sim:.1f}%")
+        with mcol4:
+            st.metric("🚨 Flagged Pairs (≥{}%)".format(similarity_threshold), flagged_pairs_count, delta_color="inverse" if flagged_pairs_count > 0 else "off")
+
+        # Threshold Flagging Warning Box
+        if flagged_pairs_count > 0:
+            st.warning(f"⚠️ **Attention:** Found **{flagged_pairs_count} document pair(s)** meeting or exceeding the **{similarity_threshold}%** threshold limit. Review the heatmap and report below.")
+        else:
+            st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
+
         # --- VISUAL HEATMAP ---
         st.subheader(f"Visual Heatmap ({run_label})")
         text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
@@ -540,7 +573,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     st.session_state.deep_filename = "excel_sheet_comparison_report.txt"
 
                 elif run_deep_para:
-                    # Non-excel paraphrase match
                     units1 = list(get_document_lines_and_sentences(path1, global_reference_text))
                     units2 = list(get_document_lines_and_sentences(path2, global_reference_text))
                     pairs = []
@@ -662,29 +694,31 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
 # ==========================================
-# MODE 3: USER GUIDE & HELP
+# MODE 3: USER GUIDE & HELP (Fully Updated)
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
-    st.write("Welcome to APLens! This guide explains what the program is, how it works, and how to interpret your results.")
+    st.write("Welcome to APLens! This comprehensive guide explains all tools, analysis modes, and features available in the suite.")
 
     st.markdown("---")
 
     st.subheader("1. What is APLens & What Does It Do?")
     st.write(
         "APLens is a specialized peer-to-peer plagiarism detection and document comparison web suite designed "
-        "for educators, instructors, and researchers. It allows you to analyze a batch of student submissions "
-        "to find cross-document similarities and perform deep-dive text matches between two specific files."
+        "for educators, instructors, and researchers. It allows you to analyze batches of student submissions "
+        "to find cross-document similarities, detect paraphrased cheating, and perform deep-dive text or spreadsheet matches."
     )
 
     st.subheader("2. How It Works & Key Features")
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
-        "* **Global Smart Filtering:** Upload an assignment instructions file or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
-        "* **Flexible Uploads:** Upload individual files, an entire folder directly, or compressed ZIP archives containing `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` documents.\n"
-        "* **Plagiarism & Paraphrase Checker:** Extracts text and values across all sheets in spreadsheets or document pages via **TF-IDF** or **Fuzzy Token Matching**, and calculates similarity matrices across every document pair.\n"
+        "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
+        "* **Flexible File Formats:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` submissions.\n"
+        "* **Batch Upload Options:** Upload individual files, select an entire folder directly from your computer, or upload compressed `.zip` archives.\n"
+        "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
+        "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs and view summary metrics counters.\n"
         "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
-        "* **Deep Dive Matcher:** Upload two specific documents (including Excel workbooks) to perform sheet-by-sheet comparative analysis, exact sentence matching, or paraphrase detection."
+        "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection."
     )
 
     st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
@@ -696,7 +730,7 @@ elif app_mode == "💡 User Guide & Help":
         "between the document in that row and the document in that column.\n"
         "* **The Diagonal (100%):** The cells running diagonally from top-left to bottom-right will always show **100%**, because a document "
         "is being compared against itself.\n"
-        "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., 40% to 90%+). A high score "
+        "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
         "means those two particular student submissions share substantial matching text sequences and warrant a closer manual review."
     )
 
