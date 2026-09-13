@@ -59,13 +59,14 @@ similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_valu
 
 st.sidebar.markdown("---")
 
-# 3. Global Smart Filtering
+# 3. Global Smart Filtering (Limit reference file to 5MB)
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
     type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"],
     key=f"global_ref_file_{rc}",
-    help="Upload the assignment prompt or reference file once. It will be applied across analysis modes!"
+    max_upload_size=5,  # 5MB limit for reference file
+    help="Upload the assignment prompt or reference file once (Max 5MB). It will be applied across analysis modes!"
 )
 
 st.sidebar.markdown("---")
@@ -166,9 +167,10 @@ if app_mode == "Plagiarism Checker":
 
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls)",
+            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls) - Max 5MB per file",
             type=list(supported_exts),
             accept_multiple_files=True,
+            max_upload_size=5,  # 5MB limit per individual student file
             key=f"folder_indiv_files_{rc}"
         )
     elif upload_choice == "Direct Folder Selection":
@@ -176,12 +178,14 @@ if app_mode == "Plagiarism Checker":
             "Select an entire folder containing student submissions",
             type=list(supported_exts),
             accept_multiple_files="directory",
+            max_upload_size=5,  # 5MB limit per file inside folder selection
             key=f"folder_dir_files_{rc}"
         )
     else:
         zip_uploaded_file = st.file_uploader(
-            "Upload ZIP Folder Archive containing student submissions",
+            "Upload ZIP Folder Archive containing student submissions (Allows up to 100MB for batch archives)",
             type=["zip"],
+            max_upload_size=100,  # Higher 100MB limit specifically for large batch ZIP archives
             key=f"folder_zip_file_{rc}"
         )
 
@@ -280,13 +284,12 @@ if app_mode == "Plagiarism Checker":
 
         st.success(f"{run_label} Complete!")
         
-        # --- METRICS & SUMMARY CARDS (UI Enhancement) ---
+        # --- METRICS & SUMMARY CARDS ---
         total_files = len(filenames)
         flat_scores = [similarity_matrix[i][j] for i in range(total_files) for j in range(total_files) if i != j]
         max_sim = max(flat_scores) if flat_scores else 0.0
         avg_sim = sum(flat_scores) / len(flat_scores) if flat_scores else 0.0
         
-        # Count high-risk pairs exceeding threshold
         flagged_pairs_count = sum(1 for score in flat_scores if score >= similarity_threshold)
 
         mcol1, mcol2, mcol3, mcol4 = st.columns(4)
@@ -297,9 +300,8 @@ if app_mode == "Plagiarism Checker":
         with mcol3:
             st.metric("📊 Average Similarity", f"{avg_sim:.1f}%")
         with mcol4:
-            st.metric("🚨 Flagged Pairs (≥{}%)".format(similarity_threshold), flagged_pairs_count, delta_color="inverse" if flagged_pairs_count > 0 else "off")
+            st.metric("🚨 Flagged Pairs (≥{}%)".format(similarity_threshold), flagged_pairs_count)
 
-        # Threshold Flagging Warning Box
         if flagged_pairs_count > 0:
             st.warning(f"⚠️ **Attention:** Found **{flagged_pairs_count} document pair(s)** meeting or exceeding the **{similarity_threshold}%** threshold limit. Review the heatmap and report below.")
         else:
@@ -354,9 +356,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"], key=f"deep_file1_{rc}")
+        file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"], max_upload_size=5, key=f"deep_file1_{rc}")
     with col2:
-        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"], key=f"deep_file2_{rc}")
+        file2 = st.file_uploader("Select Student B Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"], max_upload_size=5, key=f"deep_file2_{rc}")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -714,9 +716,9 @@ elif app_mode == "💡 User Guide & Help":
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
         "* **Flexible File Formats:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` submissions.\n"
-        "* **Batch Upload Options:** Upload individual files, select an entire folder directly from your computer, or upload compressed `.zip` archives.\n"
+        "* **Batch Upload & File Size Limits:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
-        "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs and view summary metrics counters.\n"
+        "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
         "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
         "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection."
     )
