@@ -305,6 +305,17 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             tmp.write(uploaded_file.getvalue())
             return tmp.name
 
+    def is_valid_sentence(sentence):
+        """Helper to filter out standalone numbers like '1.', '2.', or short fragments."""
+        s = sentence.strip()
+        # Filter out if it's just a number with/without a dot (e.g., "1.", "12")
+        if re.fullmatch(r'\d+\.?', s):
+            return False
+        # Filter out if word count is less than 4 (ignoring very short phrases/numbers)
+        if len(s.split()) < 4:
+            return False
+        return True
+
     def get_document_lines_and_sentences(file_path, reference_text=""):
         ext = os.path.splitext(file_path)[1].lower()
         raw_blocks = []
@@ -349,9 +360,12 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             if not cleaned_block.strip(): continue
             sub_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
             if len(sub_sentences) <= 1:
-                units.add(cleaned_block)
+                if is_valid_sentence(cleaned_block):
+                    units.add(cleaned_block)
             else:
-                for s in sub_sentences: units.add(s)
+                for s in sub_sentences:
+                    if is_valid_sentence(s):
+                        units.add(s)
         return units
 
     def get_document_true_paragraphs(file_path, reference_text=""):
@@ -394,7 +408,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
             
             sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
-            if len(sentences) >= 2:
+            if len(sentences) >= 2 and len(cleaned_block.split()) >= 8:
                 valid_paragraphs.append(cleaned_block)
         return valid_paragraphs
 
@@ -415,12 +429,12 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 df1 = pd.read_excel(xls1, sheet_name=sname, header=None).fillna("")
                 df2 = pd.read_excel(xls2, sheet_name=sname, header=None).fillna("")
                 
-                # Extract sentences per sheet
                 def extract_sentences_from_df(df):
                     text_blob = " ".join([str(v).strip() for v in df.values.flatten() if str(v).strip() and str(v).lower() != 'nan'])
                     if prompt_words:
                         text_blob = " ".join([w for w in text_blob.split() if w not in prompt_words or len(prompt_words) < 5])
-                    return set([s.strip() for s in re.split(r'(?<=[.!?])\s+', text_blob) if s.strip()])
+                    sub_sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text_blob) if s.strip()]
+                    return set([s for s in sub_sents if is_valid_sentence(s)])
                 
                 sents1 = extract_sentences_from_df(df1)
                 sents2 = extract_sentences_from_df(df2)
