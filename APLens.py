@@ -235,20 +235,17 @@ if app_mode == "Plagiarism Checker":
                         similarity_matrix = [[0.0]*n for _ in range(n)]
                         
                         if run_paraphrase:
-                            # Use token-set / sequence ratio for paraphrase detection across documents
                             for i in range(n):
                                 for j in range(n):
                                     if i == j:
                                         similarity_matrix[i][j] = 100.0
                                     else:
-                                        # Compare text similarity robustly
                                         s = difflib.SequenceMatcher(None, documents[i].lower(), documents[j].lower())
-                                        # Paraphrase heuristic: scale and boost semantic token overlap
                                         words1 = set(documents[i].lower().split())
                                         words2 = set(documents[j].lower().split())
                                         jaccard = len(words1.intersection(words2)) / max(len(words1.union(words2)), 1)
                                         score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
-                                        similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0) # Scaled multiplier for paraphrased matching sensitivity
+                                        similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0)
                         else:
                             vectorizer = TfidfVectorizer(
                                 stop_words='english', 
@@ -260,7 +257,6 @@ if app_mode == "Plagiarism Checker":
                         
                         df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
                         
-                        # Save results to session state
                         st.session_state.folder_df = df
                         st.session_state.folder_similarity_matrix = similarity_matrix
                         st.session_state.folder_filenames = filenames
@@ -438,7 +434,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 valid_paragraphs.append(cleaned_block)
         return valid_paragraphs
 
-    def get_excel_sheet_breakdown(path1, path2, reference_text=""):
+    def get_excel_sheet_breakdown(path1, path2, reference_text="", paraphrase_mode=False):
         xls1 = pd.ExcelFile(path1)
         xls2 = pd.ExcelFile(path2)
         sheets1 = xls1.sheet_names
@@ -459,37 +455,34 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     if prompt_words:
                         text_blob = " ".join([w for w in text_blob.split() if w not in prompt_words or len(prompt_words) < 5])
                     sub_sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text_blob) if s.strip()]
-                    return set([s for s in sub_sents if is_valid_sentence(s)])
+                    return [s for s in sub_sents if is_valid_sentence(s)]
                 
                 sents1 = extract_sentences_from_df(df1)
                 sents2 = extract_sentences_from_df(df2)
-                common_sents = sorted(list(sents1.intersection(sents2)))
                 
-                sheet_data["common_sentences"] = common_sents
-                sheet_data["count"] = len(common_sents)
+                if paraphrase_mode:
+                    matched_pairs = []
+                    for u1 in sents1:
+                        for u2 in sents2:
+                            if u1 == u2: continue
+                            ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
+                            if 0.65 <= ratio < 1.0:
+                                matched_pairs.append((u1, u2, round(ratio * 100, 1)))
+                    matched_pairs.sort(key=lambda x: x[2], reverse=True)
+                    sheet_data["paraphrase_pairs"] = matched_pairs
+                    sheet_data["count"] = len(matched_pairs)
+                else:
+                    common_sents = sorted(list(set(sents1).intersection(set(sents2))))
+                    sheet_data["common_sentences"] = common_sents
+                    sheet_data["count"] = len(common_sents)
             else:
-                sheet_data["common_sentences"] = []
+                if paraphrase_mode:
+                    sheet_data["paraphrase_pairs"] = []
+                else:
+                    sheet_data["common_sentences"] = []
                 sheet_data["count"] = 0
             breakdown_results.append(sheet_data)
         return breakdown_results
-
-    def get_paraphrased_sentence_matches(path1, path2, reference_text=""):
-        # Extracts sentences and finds potential paraphrased pairs based on fuzzy matching (>70% similarity)
-        units1 = list(get_document_lines_and_sentences(path1, reference_text))
-        units2 = list(get_document_lines_and_sentences(path2, reference_text))
-        
-        paraphrased_pairs = []
-        for u1 in units1:
-            for u2 in units2:
-                # Avoid exact matches (handled by standard deep dive)
-                if u1 == u2: continue
-                ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
-                if 0.65 <= ratio < 1.0: # Paraphrase threshold range
-                    paraphrased_pairs.append((u1, u2, round(ratio * 100, 1)))
-        
-        # Sort by highest similarity score
-        paraphrased_pairs.sort(key=lambda x: x[2], reverse=True)
-        return paraphrased_pairs
 
     if file1 and file2:
         is_excel_comparison = file1.name.lower().endswith(('.xlsx', '.xls')) and file2.name.lower().endswith(('.xlsx', '.xls'))
@@ -510,20 +503,26 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             path2 = get_file_bytes_temp(file2)
             
             try:
-                if run_deep_para:
-                    pairs = get_paraphrased_sentence_matches(path1, path2, global_reference_text)
-                    st.session_state.deep_result_type = "paraphrased_matches"
-                    st.session_state.deep_para_pairs = pairs
+                if is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis" and run_deep_para:
+                    breakdown = get_excel_sheet_breakdown(path1, path2, global_reference_text, paraphrase_mode=True)
+                    st.session_state.deep_result_type = "excel_sheets_paraphrase"
+                    st.session_state.deep_excel_breakdown = breakdown
                     
-                    report_content = f"Paraphrase Deep Dive Report: Comparing '{file1.name}' and '{file2.name}'\n"
-                    report_content += f"Found {len(pairs)} potential paraphrased sentence matches:\n" + "="*70 + "\n\n"
-                    for p1, p2, score in pairs:
-                        report_content += f"[Similarity: {score}%]\n- Doc A: {p1}\n- Doc B: {p2}\n\n"
+                    report_content = f"Excel Sheet-by-Sheet Paraphrase Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
+                    for item in breakdown:
+                        report_content += f"Sheet Name: {item['sheet']}\n"
+                        if not item['in_both']:
+                            report_content += "  -> Note: Sheet exists in only one of the workbooks.\n\n"
+                        else:
+                            report_content += f"  -> Potential Paraphrased Pairs Found: {item['count']}\n"
+                            for p1, p2, score in item['paraphrase_pairs']:
+                                report_content += f"     • [Similarity: {score}%]\n       - A: {p1}\n       - B: {p2}\n"
+                            report_content += "\n"
                     st.session_state.deep_report_content = report_content
-                    st.session_state.deep_filename = "paraphrase_deep_dive_report.txt"
+                    st.session_state.deep_filename = "excel_sheet_paraphrase_report.txt"
 
                 elif is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis":
-                    breakdown = get_excel_sheet_breakdown(path1, path2, global_reference_text)
+                    breakdown = get_excel_sheet_breakdown(path1, path2, global_reference_text, paraphrase_mode=False)
                     st.session_state.deep_result_type = "excel_sheets"
                     st.session_state.deep_excel_breakdown = breakdown
                     
@@ -539,6 +538,29 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                             report_content += "\n"
                     st.session_state.deep_report_content = report_content
                     st.session_state.deep_filename = "excel_sheet_comparison_report.txt"
+
+                elif run_deep_para:
+                    # Non-excel paraphrase match
+                    units1 = list(get_document_lines_and_sentences(path1, global_reference_text))
+                    units2 = list(get_document_lines_and_sentences(path2, global_reference_text))
+                    pairs = []
+                    for u1 in units1:
+                        for u2 in units2:
+                            if u1 == u2: continue
+                            ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
+                            if 0.65 <= ratio < 1.0:
+                                pairs.append((u1, u2, round(ratio * 100, 1)))
+                    pairs.sort(key=lambda x: x[2], reverse=True)
+                    
+                    st.session_state.deep_result_type = "paraphrased_matches"
+                    st.session_state.deep_para_pairs = pairs
+                    
+                    report_content = f"Paraphrase Deep Dive Report: Comparing '{file1.name}' and '{file2.name}'\n"
+                    report_content += f"Found {len(pairs)} potential paraphrased sentence matches:\n" + "="*70 + "\n\n"
+                    for p1, p2, score in pairs:
+                        report_content += f"[Similarity: {score}%]\n- Doc A: {p1}\n- Doc B: {p2}\n\n"
+                    st.session_state.deep_report_content = report_content
+                    st.session_state.deep_filename = "paraphrase_deep_dive_report.txt"
 
                 elif analysis_type == "Sentence Comparison":
                     units1 = get_document_lines_and_sentences(path1, global_reference_text)
@@ -595,6 +617,23 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     st.markdown(f"**Document B:** {p2}")
             st.text_area("Paraphrase Deep Dive Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_para_{rc}")
             st.download_button("📥 Download Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_para_{rc}")
+
+    elif st.session_state.get("deep_result_type") == "excel_sheets_paraphrase":
+        st.success("Excel Sheet-by-Sheet Paraphrase analysis complete!")
+        for item in st.session_state.deep_excel_breakdown:
+            with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} potential paraphrased pairs found)"):
+                if not item['in_both']:
+                    st.warning("This sheet name exists in only one of the uploaded workbooks.")
+                else:
+                    pairs = item['paraphrase_pairs']
+                    if pairs:
+                        st.write("**Paraphrased Sentence Pairs:**")
+                        for p1, p2, score in pairs:
+                            st.markdown(f"- **[Similarity: {score}%]**\n  * **Doc A:** {p1}\n  * **Doc B:** {p2}")
+                    else:
+                        st.info("No potential paraphrased sentence matches found in this sheet.")
+        st.text_area("Full Sheet Paraphrase Breakdown Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_excel_para_{rc}")
+        st.download_button("📥 Download Excel Sheet Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_excel_para_{rc}")
 
     elif st.session_state.get("deep_result_type") == "excel_sheets":
         st.success("Excel Sheet-by-Sheet analysis complete!")
