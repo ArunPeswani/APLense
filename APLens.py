@@ -54,7 +54,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
-    type=["docx", "pdf", "txt", "rtf"],
+    type=["docx", "pdf", "txt", "rtf", "md"],
     key=f"global_ref_file_{rc}",
     help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
 )
@@ -111,7 +111,7 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 tmp_path = tmp.name
             text = docx2txt.process(tmp_path)
             os.unlink(tmp_path)
-        elif filename_lower.endswith(('.txt', '.rtf')):
+        elif filename_lower.endswith(('.txt', '.rtf', '.md')):
             content = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
             text = content.decode('utf-8', errors='ignore')
     except Exception as e:
@@ -144,15 +144,15 @@ if app_mode == "Plagiarism Checker":
 
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, .txt, or .rtf)",
-            type=["docx", "pdf", "txt", "rtf"],
+            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, or .md)",
+            type=["docx", "pdf", "txt", "rtf", "md"],
             accept_multiple_files=True,
             key=f"folder_indiv_files_{rc}"
         )
     elif upload_choice == "Direct Folder Selection":
         directory_uploaded_files = st.file_uploader(
             "Select an entire folder containing student submissions",
-            type=["docx", "pdf", "txt", "rtf"],
+            type=["docx", "pdf", "txt", "rtf", "md"],
             accept_multiple_files="directory",
             key=f"folder_dir_files_{rc}"
         )
@@ -169,13 +169,13 @@ if app_mode == "Plagiarism Checker":
         processed_files = raw_uploaded_files
     elif upload_choice == "Direct Folder Selection" and directory_uploaded_files:
         for file_obj in directory_uploaded_files:
-            if file_obj.name.lower().endswith(('docx', 'pdf', 'txt', 'rtf')) and '__MACOSX' not in file_obj.name:
+            if file_obj.name.lower().endswith(('docx', 'pdf', 'txt', 'rtf', 'md')) and '__MACOSX' not in file_obj.name:
                 processed_files.append(file_obj)
     elif upload_choice == "ZIP Archive (.zip)" and zip_uploaded_file:
         try:
             with zipfile.ZipFile(zip_uploaded_file, 'r') as z:
                 for filename in z.namelist():
-                    if filename.lower().endswith(('docx', 'pdf', 'txt', 'rtf')) and not filename.startswith('__MACOSX/'):
+                    if filename.lower().endswith(('docx', 'pdf', 'txt', 'rtf', 'md')) and not filename.startswith('__MACOSX/'):
                         with z.open(filename) as f:
                             file_bytes = io.BytesIO(f.read())
                             file_bytes.name = os.path.basename(filename)
@@ -283,9 +283,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf"], key=f"deep_file1_{rc}")
+        file1 = st.file_uploader("Select Student A Document", type=["docx", "pdf", "txt", "rtf", "md"], key=f"deep_file1_{rc}")
     with col2:
-        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf"], key=f"deep_file2_{rc}")
+        file2 = st.file_uploader("Select Student B Document", type=["docx", "pdf", "txt", "rtf", "md"], key=f"deep_file2_{rc}")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -306,7 +306,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted: full_text_pdf += extracted + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
-        elif ext in ('.txt', '.rtf'):
+        elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 full_text_txt = f.read()
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
@@ -342,7 +342,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted: full_text_pdf += extracted + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
-        elif ext in ('.txt', '.rtf'):
+        elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 full_text_txt = f.read()
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
