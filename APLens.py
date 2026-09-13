@@ -59,7 +59,7 @@ similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_valu
 
 st.sidebar.markdown("---")
 
-# 3. Global Smart Filtering (Limit reference file to 5MB)
+# 3. Global Smart Filtering
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
@@ -170,7 +170,7 @@ if app_mode == "Plagiarism Checker":
             "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls) - Max 5MB per file",
             type=list(supported_exts),
             accept_multiple_files=True,
-            max_upload_size=5,  # 5MB limit per individual student file
+            max_upload_size=5,
             key=f"folder_indiv_files_{rc}"
         )
     elif upload_choice == "Direct Folder Selection":
@@ -178,14 +178,14 @@ if app_mode == "Plagiarism Checker":
             "Select an entire folder containing student submissions",
             type=list(supported_exts),
             accept_multiple_files="directory",
-            max_upload_size=5,  # 5MB limit per file inside folder selection
+            max_upload_size=5,
             key=f"folder_dir_files_{rc}"
         )
     else:
         zip_uploaded_file = st.file_uploader(
             "Upload ZIP Folder Archive containing student submissions (Allows up to 100MB for batch archives)",
             type=["zip"],
-            max_upload_size=100,  # Higher 100MB limit specifically for large batch ZIP archives
+            max_upload_size=100,
             key=f"folder_zip_file_{rc}"
         )
 
@@ -224,56 +224,80 @@ if app_mode == "Plagiarism Checker":
                 st.error("Please upload at least 2 documents to perform a comparison.")
             else:
                 analysis_mode_label = "Paraphrased Plagiarism Analysis" if run_paraphrase else "Standard Plagiarism Analysis"
-                with st.spinner(f"Running {analysis_mode_label}..."):
-                    documents, filenames = [], []
+                
+                # Progress bar & status display container
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                status_text.text(f"Initializing {analysis_mode_label}...")
+                progress_bar.progress(10)
+                
+                documents, filenames = [], []
+                total_to_process = len(processed_files)
+                
+                for idx, file in enumerate(processed_files):
+                    status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name}")
+                    progress_bar.progress(10 + int(60 * (idx + 1) / total_to_process))
                     
-                    for file in processed_files:
-                        file.seek(0)
-                        txt = extract_text_from_file_obj(file, file.name.lower())
-                        if txt.strip():
-                            if global_reference_text.strip():
-                                prompt_words = set(global_reference_text.split())
-                                cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
-                                if len(cleaned_txt.strip()) > 50:
-                                    txt = cleaned_txt
-                            
-                            documents.append(txt)
-                            filenames.append(file.name)
+                    file.seek(0)
+                    txt = extract_text_from_file_obj(file, file.name.lower())
+                    if txt.strip():
+                        if global_reference_text.strip():
+                            prompt_words = set(global_reference_text.split())
+                            cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
+                            if len(cleaned_txt.strip()) > 50:
+                                txt = cleaned_txt
+                        
+                        documents.append(txt)
+                        filenames.append(file.name)
+                
+                if len(documents) < 2:
+                    progress_bar.empty()
+                    status_text.empty()
+                    st.error("Not enough valid text found in the uploaded documents.")
+                else:
+                    status_text.text("Calculating similarity matrix across documents...")
+                    progress_bar.progress(85)
                     
-                    if len(documents) < 2:
-                        st.error("Not enough valid text found in the uploaded documents.")
+                    n = len(documents)
+                    similarity_matrix = [[0.0]*n for _ in range(n)]
+                    
+                    if run_paraphrase:
+                        for i in range(n):
+                            for j in range(n):
+                                if i == j:
+                                    similarity_matrix[i][j] = 100.0
+                                else:
+                                    s = difflib.SequenceMatcher(None, documents[i].lower(), documents[j].lower())
+                                    words1 = set(documents[i].lower().split())
+                                    words2 = set(documents[j].lower().split())
+                                    jaccard = len(words1.intersection(words2)) / max(len(words1.union(words2)), 1)
+                                    score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
+                                    similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0)
                     else:
-                        n = len(documents)
-                        similarity_matrix = [[0.0]*n for _ in range(n)]
-                        
-                        if run_paraphrase:
-                            for i in range(n):
-                                for j in range(n):
-                                    if i == j:
-                                        similarity_matrix[i][j] = 100.0
-                                    else:
-                                        s = difflib.SequenceMatcher(None, documents[i].lower(), documents[j].lower())
-                                        words1 = set(documents[i].lower().split())
-                                        words2 = set(documents[j].lower().split())
-                                        jaccard = len(words1.intersection(words2)) / max(len(words1.union(words2)), 1)
-                                        score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
-                                        similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0)
-                        else:
-                            vectorizer = TfidfVectorizer(
-                                stop_words='english', 
-                                ngram_range=(min_words, max_words), 
-                                max_features=10000
-                            )
-                            tfidf_matrix = vectorizer.fit_transform(documents)
-                            similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
-                        
-                        df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
-                        
-                        st.session_state.folder_df = df
-                        st.session_state.folder_similarity_matrix = similarity_matrix
-                        st.session_state.folder_filenames = filenames
-                        st.session_state.folder_analyzed = True
-                        st.session_state.analysis_type_run = analysis_mode_label
+                        vectorizer = TfidfVectorizer(
+                            stop_words='english', 
+                            ngram_range=(min_words, max_words), 
+                            max_features=10000
+                        )
+                        tfidf_matrix = vectorizer.fit_transform(documents)
+                        similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
+                    
+                    progress_bar.progress(100)
+                    status_text.text("Analysis complete!")
+                    
+                    df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
+                    
+                    st.session_state.folder_df = df
+                    st.session_state.folder_similarity_matrix = similarity_matrix
+                    st.session_state.folder_filenames = filenames
+                    st.session_state.folder_analyzed = True
+                    st.session_state.analysis_type_run = analysis_mode_label
+                    
+                    # Clear progress UI elements on completion
+                    progress_bar.empty()
+                    status_text.empty()
+                    st.rerun()
 
     # Render results if they exist in session state
     if st.session_state.get("folder_analyzed", False):
@@ -307,9 +331,14 @@ if app_mode == "Plagiarism Checker":
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
-        # --- VISUAL HEATMAP ---
+        # --- SCROLLABLE & DYNAMIC HEATMAP FOR LARGE BATCHES ---
         st.subheader(f"Visual Heatmap ({run_label})")
+        st.write("💡 *Tip: For large batches (e.g. 99 submissions), use the scrollbars below to navigate across the matrix.*")
+        
         text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
+        
+        # Dynamically scale chart size based on number of files (~22px per file)
+        chart_dimension = max(700, total_files * 22)
         
         fig = go.Figure(data=go.Heatmap(
             z=similarity_matrix,
@@ -322,11 +351,22 @@ if app_mode == "Plagiarism Checker":
             zmax=100
         ))
         fig.update_layout(
-            height=500, 
-            margin=dict(l=20, r=20, t=20, b=20),
+            width=chart_dimension,
+            height=chart_dimension,
+            margin=dict(l=150, r=50, t=50, b=150),
             xaxis=dict(tickangle=-45)
         )
-        st.plotly_chart(fig, use_container_width=True)
+        
+        # Render inside a custom scrollable container so it fits cleanly on screen
+        fig_html = fig.to_html(include_plotlyjs='cdn', full_html=False)
+        st.markdown(
+            f"""
+            <div style="width: 100%; height: 600px; overflow: scroll; border: 1px solid #ddd; padding: 10px; background: #fff;">
+                {fig_html}
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
 
         st.subheader("Similarity Matrix Report (%)")
         st.dataframe(df.style.format("{:.2f}%"))
@@ -696,7 +736,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
 # ==========================================
-# MODE 3: USER GUIDE & HELP (Fully Updated)
+# MODE 3: USER GUIDE & HELP
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
@@ -719,7 +759,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **Batch Upload & File Size Limits:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
-        "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
+        "* **Scrollable Visual Heatmap:** An interactive, color-graded heatmap dynamically scales for large classes (e.g., 99 students) and is wrapped in a scrollable container so you can inspect every student name clearly.\n"
         "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection."
     )
 
