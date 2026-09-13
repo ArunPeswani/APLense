@@ -10,6 +10,7 @@ import tempfile
 import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import difflib
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄", layout="centered")
 
@@ -200,11 +201,18 @@ if app_mode == "Plagiarism Checker":
     if processed_files:
         st.info(f"Loaded {len(processed_files)} file(s) successfully.")
         
-        if st.button("Run Plagiarism Analysis", type="primary", key=f"run_folder_analysis_{rc}"):
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            run_standard = st.button("Run Plagiarism Analysis", type="primary", key=f"run_folder_analysis_{rc}")
+        with col_btn2:
+            run_paraphrase = st.button("🔍 Run Paraphrase Analysis", type="secondary", key=f"run_folder_paraphrase_{rc}")
+
+        if run_standard or run_paraphrase:
             if len(processed_files) < 2:
                 st.error("Please upload at least 2 documents to perform a comparison.")
             else:
-                with st.spinner("Analyzing documents and calculating similarity matrix..."):
+                analysis_mode_label = "Paraphrased Plagiarism Analysis" if run_paraphrase else "Standard Plagiarism Analysis"
+                with st.spinner(f"Running {analysis_mode_label}..."):
                     documents, filenames = [], []
                     
                     for file in processed_files:
@@ -223,32 +231,53 @@ if app_mode == "Plagiarism Checker":
                     if len(documents) < 2:
                         st.error("Not enough valid text found in the uploaded documents.")
                     else:
-                        vectorizer = TfidfVectorizer(
-                            stop_words='english', 
-                            ngram_range=(min_words, max_words), 
-                            max_features=10000
-                        )
-                        tfidf_matrix = vectorizer.fit_transform(documents)
-                        similarity_matrix = cosine_similarity(tfidf_matrix) * 100
+                        n = len(documents)
+                        similarity_matrix = [[0.0]*n for _ in range(n)]
+                        
+                        if run_paraphrase:
+                            # Use token-set / sequence ratio for paraphrase detection across documents
+                            for i in range(n):
+                                for j in range(n):
+                                    if i == j:
+                                        similarity_matrix[i][j] = 100.0
+                                    else:
+                                        # Compare text similarity robustly
+                                        s = difflib.SequenceMatcher(None, documents[i].lower(), documents[j].lower())
+                                        # Paraphrase heuristic: scale and boost semantic token overlap
+                                        words1 = set(documents[i].lower().split())
+                                        words2 = set(documents[j].lower().split())
+                                        jaccard = len(words1.intersection(words2)) / max(len(words1.union(words2)), 1)
+                                        score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
+                                        similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0) # Scaled multiplier for paraphrased matching sensitivity
+                        else:
+                            vectorizer = TfidfVectorizer(
+                                stop_words='english', 
+                                ngram_range=(min_words, max_words), 
+                                max_features=10000
+                            )
+                            tfidf_matrix = vectorizer.fit_transform(documents)
+                            similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
                         
                         df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
                         
-                        # Save results to session state so they persist across page switches
+                        # Save results to session state
                         st.session_state.folder_df = df
                         st.session_state.folder_similarity_matrix = similarity_matrix
                         st.session_state.folder_filenames = filenames
                         st.session_state.folder_analyzed = True
+                        st.session_state.analysis_type_run = analysis_mode_label
 
     # Render results if they exist in session state
     if st.session_state.get("folder_analyzed", False):
         df = st.session_state.folder_df
         similarity_matrix = st.session_state.folder_similarity_matrix
         filenames = st.session_state.folder_filenames
+        run_label = st.session_state.get("analysis_type_run", "Analysis")
 
-        st.success("Analysis complete!")
+        st.success(f"{run_label} Complete!")
         
         # --- VISUAL HEATMAP ---
-        st.subheader("Visual Similarity Heatmap")
+        st.subheader(f"Visual Heatmap ({run_label})")
         text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
         
         fig = go.Figure(data=go.Heatmap(
@@ -257,7 +286,7 @@ if app_mode == "Plagiarism Checker":
             y=filenames,
             text=text_annotations,
             texttemplate="%{text}",
-            colorscale="Reds",
+            colorscale="Reds" if "Paraphrase" not in run_label else "Oranges",
             zmin=0,
             zmax=100
         ))
@@ -306,12 +335,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             return tmp.name
 
     def is_valid_sentence(sentence):
-        """Helper to filter out standalone numbers like '1.', '2.', or short fragments."""
         s = sentence.strip()
-        # Filter out if it's just a number with/without a dot (e.g., "1.", "12")
         if re.fullmatch(r'\d+\.?', s):
             return False
-        # Filter out if word count is less than 4 (ignoring very short phrases/numbers)
         if len(s.split()) < 4:
             return False
         return True
@@ -412,7 +438,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 valid_paragraphs.append(cleaned_block)
         return valid_paragraphs
 
-    # Special helper for Excel sheet-by-sheet detailed comparison
     def get_excel_sheet_breakdown(path1, path2, reference_text=""):
         xls1 = pd.ExcelFile(path1)
         xls2 = pd.ExcelFile(path2)
@@ -448,6 +473,24 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             breakdown_results.append(sheet_data)
         return breakdown_results
 
+    def get_paraphrased_sentence_matches(path1, path2, reference_text=""):
+        # Extracts sentences and finds potential paraphrased pairs based on fuzzy matching (>70% similarity)
+        units1 = list(get_document_lines_and_sentences(path1, reference_text))
+        units2 = list(get_document_lines_and_sentences(path2, reference_text))
+        
+        paraphrased_pairs = []
+        for u1 in units1:
+            for u2 in units2:
+                # Avoid exact matches (handled by standard deep dive)
+                if u1 == u2: continue
+                ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
+                if 0.65 <= ratio < 1.0: # Paraphrase threshold range
+                    paraphrased_pairs.append((u1, u2, round(ratio * 100, 1)))
+        
+        # Sort by highest similarity score
+        paraphrased_pairs.sort(key=lambda x: x[2], reverse=True)
+        return paraphrased_pairs
+
     if file1 and file2:
         is_excel_comparison = file1.name.lower().endswith(('.xlsx', '.xls')) and file2.name.lower().endswith(('.xlsx', '.xls'))
         
@@ -456,12 +499,30 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         else:
             analysis_type = st.radio("Select Match Type", ["Sentence Comparison", "Paragraph Comparison"], key=f"deep_match_type_{rc}")
         
-        if st.button("Run Deep Dive Matcher", type="primary", key=f"run_deep_dive_{rc}"):
+        col_deep1, col_deep2 = st.columns(2)
+        with col_deep1:
+            run_deep = st.button("Run Deep Dive Matcher", type="primary", key=f"run_deep_dive_{rc}")
+        with col_deep2:
+            run_deep_para = st.button("🔍 Run Paraphrase Matcher", type="secondary", key=f"run_deep_para_{rc}")
+
+        if run_deep or run_deep_para:
             path1 = get_file_bytes_temp(file1)
             path2 = get_file_bytes_temp(file2)
             
             try:
-                if is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis":
+                if run_deep_para:
+                    pairs = get_paraphrased_sentence_matches(path1, path2, global_reference_text)
+                    st.session_state.deep_result_type = "paraphrased_matches"
+                    st.session_state.deep_para_pairs = pairs
+                    
+                    report_content = f"Paraphrase Deep Dive Report: Comparing '{file1.name}' and '{file2.name}'\n"
+                    report_content += f"Found {len(pairs)} potential paraphrased sentence matches:\n" + "="*70 + "\n\n"
+                    for p1, p2, score in pairs:
+                        report_content += f"[Similarity: {score}%]\n- Doc A: {p1}\n- Doc B: {p2}\n\n"
+                    st.session_state.deep_report_content = report_content
+                    st.session_state.deep_filename = "paraphrase_deep_dive_report.txt"
+
+                elif is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis":
                     breakdown = get_excel_sheet_breakdown(path1, path2, global_reference_text)
                     st.session_state.deep_result_type = "excel_sheets"
                     st.session_state.deep_excel_breakdown = breakdown
@@ -522,6 +583,19 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         st.info("Found 0 matching sentences/lines.")
     elif st.session_state.get("deep_result_type") == "empty_paras":
         st.info("Found 0 matching paragraphs (with at least 2 sentences).")
+    elif st.session_state.get("deep_result_type") == "paraphrased_matches":
+        pairs = st.session_state.deep_para_pairs
+        if not pairs:
+            st.info("Found 0 potential paraphrased sentence matches.")
+        else:
+            st.success(f"Found {len(pairs)} potential paraphrased sentence match(es)!")
+            for p1, p2, score in pairs:
+                with st.expander(f"Similarity Score: {score}%"):
+                    st.markdown(f"**Document A:** {p1}")
+                    st.markdown(f"**Document B:** {p2}")
+            st.text_area("Paraphrase Deep Dive Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_para_{rc}")
+            st.download_button("📥 Download Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_para_{rc}")
+
     elif st.session_state.get("deep_result_type") == "excel_sheets":
         st.success("Excel Sheet-by-Sheet analysis complete!")
         for item in st.session_state.deep_excel_breakdown:
@@ -569,9 +643,9 @@ elif app_mode == "💡 User Guide & Help":
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Global Smart Filtering:** Upload an assignment instructions file or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
         "* **Flexible Uploads:** Upload individual files, an entire folder directly, or compressed ZIP archives containing `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` documents.\n"
-        "* **Plagiarism Checker:** Extracts text and values across all sheets in spreadsheets or document pages via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
+        "* **Plagiarism & Paraphrase Checker:** Extracts text and values across all sheets in spreadsheets or document pages via **TF-IDF** or **Fuzzy Token Matching**, and calculates similarity matrices across every document pair.\n"
         "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
-        "* **Deep Dive Matcher:** Upload two specific documents (including Excel workbooks) to perform sheet-by-sheet comparative analysis and isolate exact matching sentences or true paragraphs."
+        "* **Deep Dive Matcher:** Upload two specific documents (including Excel workbooks) to perform sheet-by-sheet comparative analysis, exact sentence matching, or paraphrase detection."
     )
 
     st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
