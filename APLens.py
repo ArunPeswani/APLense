@@ -96,7 +96,7 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "use, making it safe and secure for checking sensitive submissions!"
     )
 
-# Helper function to extract text from any file object (robust Excel & document parser)
+# Helper function to extract text from any file object
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
     try:
@@ -119,7 +119,6 @@ def extract_text_from_file_obj(file_obj, filename_lower):
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             for sheet_name in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
-                # Filter out nan, None, and empty strings, keeping valid text and numbers
                 tokens = []
                 for val in df.values.flatten():
                     if pd.notna(val):
@@ -222,7 +221,7 @@ if app_mode == "Plagiarism Checker":
                             filenames.append(file.name)
                     
                     if len(documents) < 2:
-                        st.error(f"Not enough valid text found in the uploaded documents. Extracted lengths: {[len(d) for d in documents]}")
+                        st.error("Not enough valid text found in the uploaded documents.")
                     else:
                         vectorizer = TfidfVectorizer(
                             stop_words='english', 
@@ -290,7 +289,7 @@ if app_mode == "Plagiarism Checker":
 # ==========================================
 elif app_mode == "Deep Dive (2-Doc Comparison)":
     st.header("Deep Dive Matcher")
-    st.write("Compare two specific documents (including Excel sheets, Word, PDF) to extract exact matching sentences or true paragraphs.")
+    st.write("Compare two specific documents or spreadsheets sheet-by-sheet to extract exact matching sentences or true paragraphs.")
     
     if global_reference_text:
         st.info("💡 Global Smart Filtering is active: Assignment prompt/reference text will be automatically filtered out during matching.")
@@ -335,7 +334,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                         val_str = str(val).strip()
                         if val_str and val_str.lower() != 'nan':
                             tokens.append(val_str)
-                full_text_excel += f" {' '.join(tokens)} \n\n"
+                full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
@@ -384,7 +383,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                         val_str = str(val).strip()
                         if val_str and val_str.lower() != 'nan':
                             tokens.append(val_str)
-                full_text_excel += f" {' '.join(tokens)} \n\n"
+                full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
@@ -399,15 +398,74 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 valid_paragraphs.append(cleaned_block)
         return valid_paragraphs
 
+    # Special helper for Excel sheet-by-sheet detailed comparison
+    def get_excel_sheet_breakdown(path1, path2, reference_text=""):
+        xls1 = pd.ExcelFile(path1)
+        xls2 = pd.ExcelFile(path2)
+        sheets1 = xls1.sheet_names
+        sheets2 = xls2.sheet_names
+        all_sheets = sorted(list(set(sheets1).union(set(sheets2))))
+        
+        prompt_words = set(reference_text.split()) if reference_text else set()
+        breakdown_results = []
+        
+        for sname in all_sheets:
+            sheet_data = {"sheet": sname, "in_both": sname in sheets1 and sname in sheets2}
+            if sheet_data["in_both"]:
+                df1 = pd.read_excel(xls1, sheet_name=sname, header=None).fillna("")
+                df2 = pd.read_excel(xls2, sheet_name=sname, header=None).fillna("")
+                
+                # Extract sentences per sheet
+                def extract_sentences_from_df(df):
+                    text_blob = " ".join([str(v).strip() for v in df.values.flatten() if str(v).strip() and str(v).lower() != 'nan'])
+                    if prompt_words:
+                        text_blob = " ".join([w for w in text_blob.split() if w not in prompt_words or len(prompt_words) < 5])
+                    return set([s.strip() for s in re.split(r'(?<=[.!?])\s+', text_blob) if s.strip()])
+                
+                sents1 = extract_sentences_from_df(df1)
+                sents2 = extract_sentences_from_df(df2)
+                common_sents = sorted(list(sents1.intersection(sents2)))
+                
+                sheet_data["common_sentences"] = common_sents
+                sheet_data["count"] = len(common_sents)
+            else:
+                sheet_data["common_sentences"] = []
+                sheet_data["count"] = 0
+            breakdown_results.append(sheet_data)
+        return breakdown_results
+
     if file1 and file2:
-        analysis_type = st.radio("Select Match Type", ["Sentence Comparison", "Paragraph Comparison"], key=f"deep_match_type_{rc}")
+        is_excel_comparison = file1.name.lower().endswith(('.xlsx', '.xls')) and file2.name.lower().endswith(('.xlsx', '.xls'))
+        
+        if is_excel_comparison:
+            analysis_type = st.radio("Select Match Type", ["Sheet-by-Sheet Analysis", "Sentence Comparison", "Paragraph Comparison"], key=f"deep_match_type_{rc}")
+        else:
+            analysis_type = st.radio("Select Match Type", ["Sentence Comparison", "Paragraph Comparison"], key=f"deep_match_type_{rc}")
         
         if st.button("Run Deep Dive Matcher", type="primary", key=f"run_deep_dive_{rc}"):
             path1 = get_file_bytes_temp(file1)
             path2 = get_file_bytes_temp(file2)
             
             try:
-                if analysis_type == "Sentence Comparison":
+                if is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis":
+                    breakdown = get_excel_sheet_breakdown(path1, path2, global_reference_text)
+                    st.session_state.deep_result_type = "excel_sheets"
+                    st.session_state.deep_excel_breakdown = breakdown
+                    
+                    report_content = f"Excel Sheet-by-Sheet Comparison Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
+                    for item in breakdown:
+                        report_content += f"Sheet Name: {item['sheet']}\n"
+                        if not item['in_both']:
+                            report_content += "  -> Note: Sheet exists in only one of the workbooks.\n\n"
+                        else:
+                            report_content += f"  -> Matching Sentences Found: {item['count']}\n"
+                            for s in item['common_sentences']:
+                                report_content += f"     • {s}\n"
+                            report_content += "\n"
+                    st.session_state.deep_report_content = report_content
+                    st.session_state.deep_filename = "excel_sheet_comparison_report.txt"
+
+                elif analysis_type == "Sentence Comparison":
                     units1 = get_document_lines_and_sentences(path1, global_reference_text)
                     units2 = get_document_lines_and_sentences(path2, global_reference_text)
                     common_units = sorted(units1.intersection(units2))
@@ -416,7 +474,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                         st.session_state.deep_result_type = "empty_sentences"
                     else:
                         report_content = f"Comparison Report: Comparing '{file1.name}' and '{file2.name}'\n"
-                        report_content += f"Found {len(common_units)} matching sentences:\n" + "="*70 + "\n\n"
+                        report_content += f"Found {len(common_units)} matching sentences/lines:\n" + "="*70 + "\n\n"
                         for u in common_units: report_content += u + "\n\n"
                         
                         st.session_state.deep_result_type = "sentences"
@@ -450,6 +508,22 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         st.info("Found 0 matching sentences/lines.")
     elif st.session_state.get("deep_result_type") == "empty_paras":
         st.info("Found 0 matching paragraphs (with at least 2 sentences).")
+    elif st.session_state.get("deep_result_type") == "excel_sheets":
+        st.success("Excel Sheet-by-Sheet analysis complete!")
+        for item in st.session_state.deep_excel_breakdown:
+            with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} matching sentences found)"):
+                if not item['in_both']:
+                    st.warning("This sheet name exists in only one of the uploaded workbooks.")
+                else:
+                    if item['common_sentences']:
+                        st.write("**Matching Sentences / Text Answers:**")
+                        for s in item['common_sentences']:
+                            st.markdown(f"- {s}")
+                    else:
+                        st.info("No identical sentence matches found in this sheet.")
+        st.text_area("Full Sheet Breakdown Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_excel_{rc}")
+        st.download_button("📥 Download Excel Sheet Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_excel_{rc}")
+
     elif st.session_state.get("deep_result_type") in ["sentences", "paragraphs"]:
         count = st.session_state.deep_count
         label_text = "matching sentence(s)/line(s)!" if st.session_state.deep_result_type == "sentences" else "matching paragraph(s)!"
@@ -483,7 +557,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **Flexible Uploads:** Upload individual files, an entire folder directly, or compressed ZIP archives containing `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` documents.\n"
         "* **Plagiarism Checker:** Extracts text and values across all sheets in spreadsheets or document pages via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
         "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
-        "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences or true multi-sentence paragraphs using custom structural regex matching."
+        "* **Deep Dive Matcher:** Upload two specific documents (including Excel workbooks) to perform sheet-by-sheet comparative analysis and isolate exact matching sentences or true paragraphs."
     )
 
     st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
