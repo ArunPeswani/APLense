@@ -330,9 +330,9 @@ if app_mode == "Plagiarism Checker":
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
-        # --- NATIVE SCROLLABLE HEATMAP ---
+        # --- SCROLLABLE HEATMAP CONTAINER ---
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use the chart toolbar on the top right to zoom, pan, or scroll across the large matrix.*")
+        st.write("💡 *Tip: Scroll horizontally and vertically inside the box below to inspect all student submission names and intersection scores clearly.*")
         
         text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
         
@@ -355,7 +355,15 @@ if app_mode == "Plagiarism Checker":
             xaxis=dict(tickangle=-45)
         )
         
-        st.plotly_chart(fig, use_container_width=False)
+        heatmap_html = fig.to_html(include_plotlyjs='cdn', full_html=False)
+        st.markdown(
+            f"""
+            <div style="width: 100%; height: 600px; overflow: scroll; border: 2px solid #ccc; background: white; padding: 10px;">
+                {heatmap_html}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         st.subheader("Similarity Matrix Report (%)")
         st.dataframe(df.style.format("{:.2f}%"))
@@ -748,7 +756,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **Batch Upload & File Size Limits:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
-        "* **Native Scalable Heatmap:** An interactive, color-graded heatmap dynamically scales for large classes (e.g., 99 students) using native chart controls so you can scroll and inspect every student name clearly.\n"
+        "* **Scrollable Heatmap Container:** An interactive, color-graded heatmap dynamically scales for large classes (e.g., 99 students) inside an HTML scrollable viewport so you can scroll and inspect every student name clearly without clipping.\n"
         "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection."
     )
 
