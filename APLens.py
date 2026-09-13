@@ -3,7 +3,8 @@ import os
 import zipfile
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import seaborn as sns
 from pypdf import PdfReader
 import docx2txt
 import tempfile
@@ -330,31 +331,31 @@ if app_mode == "Plagiarism Checker":
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
-        # --- PLOTLY INTERACTIVE NATIVE HEATMAP ---
+        # --- SEABORN / MATPLOTLIB SCALABLE HEATMAP ---
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use Plotly's toolbar on the top right of the chart to zoom, pan, or download the view.*")
+        st.write("💡 *Tip: High-resolution heatmap generated below. For large batches (99 files), scroll to view all student names clearly.*")
         
-        text_annotations = [[f"{val:.1f}%" for val in row] for row in similarity_matrix]
-        chart_dimension = max(700, total_files * 25)
+        fig_size = max(8, total_files * 0.25)
+        fig, ax = plt.subplots(figsize=(fig_size, fig_size))
         
-        fig = go.Figure(data=go.Heatmap(
-            z=similarity_matrix,
-            x=filenames,
-            y=filenames,
-            text=text_annotations,
-            texttemplate="%{text}" if total_files <= 30 else None,  # Hide numbers if 99 files to prevent visual clutter
-            colorscale="Reds" if "Paraphrase" not in run_label else "Oranges",
-            zmin=0,
-            zmax=100
-        ))
-        fig.update_layout(
-            width=chart_dimension,
-            height=chart_dimension,
-            margin=dict(l=150, r=50, t=50, b=150),
-            xaxis=dict(tickangle=-45)
+        sns.heatmap(
+            df, 
+            annot=False,  # Turned off annotations for large batch readability
+            fmt=".1f", 
+            cmap="Reds" if "Paraphrase" not in run_label else "YlOrRd", 
+            cbar=True, 
+            square=True,
+            linewidths=.2,
+            ax=ax,
+            vmin=0,
+            vmax=100
         )
+        plt.xticks(rotation=45, ha='right', fontsize=9)
+        plt.yticks(fontsize=9)
+        plt.title(f"Similarity Matrix Heatmap - {run_label}", fontsize=14, pad=20)
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.pyplot(fig, use_container_width=True)
+        plt.close(fig)
 
         st.subheader("Similarity Matrix Report (%)")
         st.dataframe(df.style.format("{:.2f}%"))
@@ -747,7 +748,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **Batch Upload & File Size Limits:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
-        "* **Scalable Interactive Heatmap:** An interactive Plotly heatmap dynamically scales for large classes (e.g., 99 students) with full native zoom, pan, and scroll capabilities.\n"
+        "* **Scalable Matplotlib/Seaborn Heatmap:** An interactive, high-resolution heatmap dynamically scales for large classes (e.g., 99 students) so you can inspect every student name clearly without clipping.\n"
         "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection."
     )
 
