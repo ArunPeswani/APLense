@@ -330,11 +330,13 @@ if app_mode == "Plagiarism Checker":
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
-        # --- SCROLLABLE & CLEAN TRUNCATED HEATMAP ---
+        # --- PROPORTIONATE SQUARE HEATMAP WITH NATIVE SCROLLBARS ---
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use the scrollbars and Plotly toolbar to navigate across the matrix. Hover over any cell to see full names and exact scores.*")
+        st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
         
         truncated_names = [name if len(name) <= 20 else name[:17] + "..." for name in filenames]
+        
+        # Proportionate square dimension based on number of files (width = height)
         chart_dimension = max(900, total_files * 25)
         
         fig = go.Figure(data=go.Heatmap(
@@ -349,12 +351,13 @@ if app_mode == "Plagiarism Checker":
         ))
         fig.update_layout(
             width=chart_dimension,
-            height=chart_dimension,
+            height=chart_dimension,  # Width equals height for perfect square proportion
             margin=dict(l=150, r=50, t=50, b=150),
             xaxis=dict(tickangle=-45),
             yaxis=dict(autorange='reversed')
         )
         
+        # use_container_width=False ensures custom width/height with native scrollbars
         st.plotly_chart(fig, use_container_width=False)
 
         st.subheader("Similarity Matrix Report (%)")
@@ -748,7 +751,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **Batch Upload & File Size Limits:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
-        "* **Interactive Fluid Heatmap:** An interactive Plotly heatmap dynamically scales for large classes (e.g., 99 students) with native zoom, pan, and scroll capabilities.\n"
+        "* **Proportionate Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) with native scrollbars and zoom tools.\n"
         "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection."
     )
 
