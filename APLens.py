@@ -22,7 +22,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 APLens Plagiarism Suite")
+st.title("📄 APLens - Plagiarism Suite")
 
 # Initialize reset counter for widget state management
 if "reset_count" not in st.session_state:
@@ -37,7 +37,7 @@ rc = st.session_state.reset_count
 # 1. Navigation Radio Buttons
 app_mode = st.sidebar.radio(
     "Navigation", 
-    ["Folder Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], 
+    ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], 
     key=f"nav_mode_{rc}"
 )
 
@@ -53,7 +53,7 @@ st.sidebar.markdown("---")
 # 3. Global Smart Filtering
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
-    "Upload Reference/Prompt (Optional)",
+    "Upload Assignment Instructions/Syllabus (Optional)",
     type=["docx", "pdf", "txt", "rtf"],
     key=f"global_ref_file_{rc}",
     help="Upload the assignment prompt or syllabus once. It will be applied to both Folder Checker and Deep Dive!"
@@ -126,10 +126,10 @@ if reference_file:
 
 
 # ==========================================
-# MODE 1: FOLDER PLAGIARISM CHECKER
+# MODE 1: PLAGIARISM CHECKER
 # ==========================================
-if app_mode == "Folder Plagiarism Checker":
-    st.header("Folder Similarity Matrix Analysis")
+if app_mode == "Plagiarism Checker":
+    st.header("File Similarity Matrix Analysis")
     st.write("Upload multiple student submissions, a direct folder, or a ZIP archive below to check cross-document similarities.")
 
     upload_choice = st.radio(
@@ -424,7 +424,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 # MODE 3: USER GUIDE & HELP
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
-    st.header("💡 APLens User Guide & Help Center")
+    st.header("💡 User Guide & Help Center")
     st.write("Welcome to APLens! This guide explains what the program is, how it works, and how to interpret your results.")
 
     st.markdown("---")
@@ -433,22 +433,22 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "APLens is a specialized peer-to-peer plagiarism detection and document comparison web suite designed "
         "for educators, instructors, and researchers. It allows you to analyze a batch of student submissions "
-        "to find cross-document similarities or perform deep-dive text matches between two specific files."
+        "to find cross-document similarities and perform deep-dive text matches between two specific files."
     )
 
     st.subheader("2. How It Works & Key Features")
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
-        "* **Global Smart Filtering:** Upload an assignment prompt or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
-        "* **Flexible Uploads:** Upload individual files, an entire folder directly, or compressed ZIP archives containing `.docx`, `.pdf`, `.txt`, and `.rtf` documents.\n"
-        "* **Folder Plagiarism Checker:** Extracts text, tokenizes words via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
+        "* **Global Smart Filtering:** Upload an assignment instructions file or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
+        "* **Flexible Uploads:** Upload individual files, an entire folder directly, or compressed ZIP archives containing `.docx`, `.pdf`, `.txt`, `.rtf`, and `.md` documents.\n"
+        "* **Plagiarism Checker:** Extracts text, tokenizes words via **TF-IDF**, and calculates a **Cosine Similarity** percentage matrix across every document pair.\n"
         "* **Visual Similarity Heatmap:** An interactive, color-graded heatmap plots the entire similarity matrix so clusters of high overlap jump out instantly at a glance.\n"
         "* **Deep Dive Matcher:** Upload two specific documents to isolate and extract exact overlapping sentences or true multi-sentence paragraphs using custom structural regex matching."
     )
 
     st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
     st.write(
-        "When you run the **Folder Plagiarism Checker**, you can download an Excel report (`plagiarism_report.xlsx`). Here is how to read it:\n\n"
+        "When you run the **Plagiarism Checker**, you can download an Excel report (`plagiarism_report.xlsx`). Here is how to read it:\n\n"
         "* **The Matrix Structure:** The Excel spreadsheet is a symmetric cross-comparison table. Both the **Rows** and **Columns** "
         "represent the file names of the uploaded student submissions.\n"
         "* **Reading Cell Values:** Each cell contains a percentage value (from 0% to 100%) indicating how much textual overlap exists "
