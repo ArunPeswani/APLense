@@ -330,14 +330,12 @@ if app_mode == "Plagiarism Checker":
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
-        # --- PROPORTIONATE SQUARE HEATMAP WITH NATIVE SCROLLBARS ---
+        # --- SCROLLABLE CONTAINER WRAPPER FOR SQUARE PROPORTION ---
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
+        st.write("💡 *Tip: Use the horizontal and vertical scrollbars inside the box below to navigate the proportionate square matrix clearly.*")
         
         truncated_names = [name if len(name) <= 20 else name[:17] + "..." for name in filenames]
-        
-        # Proportionate square dimension based on number of files (width = height)
-        chart_dimension = max(900, total_files * 25)
+        chart_dimension = max(1000, total_files * 25)  # Generates a large square dimension (e.g., 2500x2500px for 99 files)
         
         fig = go.Figure(data=go.Heatmap(
             z=similarity_matrix,
@@ -357,8 +355,16 @@ if app_mode == "Plagiarism Checker":
             yaxis=dict(autorange='reversed')
         )
         
-        # use_container_width=False ensures custom width/height with native scrollbars
-        st.plotly_chart(fig, use_container_width=False)
+        # Render the chart inside a fixed-size scrollable container so Streamlit can't squish it
+        chart_html = fig.to_html(include_plotlyjs='cdn', full_html=False)
+        st.markdown(
+            f"""
+            <div style="width: 100%; height: 650px; overflow: scroll; border: 2px solid #e0e0e0; background: #ffffff; padding: 10px; border-radius: 6px;">
+                {chart_html}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         st.subheader("Similarity Matrix Report (%)")
         st.dataframe(df.style.format("{:.2f}%"))
@@ -751,7 +757,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **Batch Upload & File Size Limits:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
-        "* **Proportionate Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) with native scrollbars and zoom tools.\n"
+        "* **Scrollable Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) wrapped in native scrollable containers.\n"
         "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection."
     )
 
