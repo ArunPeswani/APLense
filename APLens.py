@@ -110,7 +110,7 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
 st.sidebar.markdown("---")
 
 # Beta Testing Launch Button
-if st.sidebar.button("🧪 Launch Beta Testing (New Features)", type="secondary"):
+if st.sidebar.button("🧪 APLens Beta - Unstable", type="secondary"):
     st.switch_page("pages/APLens_Beta.py")
 
 # Helper function to extract text from any file object
