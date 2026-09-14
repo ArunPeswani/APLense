@@ -374,10 +374,6 @@ elif app_mode == "💡 User Guide & Help":
     st.header("💡 Beta Testing Guide")
     st.write("This page tests mock identity providers, course tracking, and automated retention history dashboards.")
 
-[Streamlit Part 10: Mastering Page Navigation](https://www.youtube.com/watch?v=591rRCSEHt4)
-
-This video provides clear, step-by-step instructions and practical examples, making it easy to build impressive multi-page Streamlit applications.
-http://googleusercontent.com/youtube_content/1
 
 if st.button("⬅️ Back to APLens Core"):
     st.switch_page("APLens.py")
