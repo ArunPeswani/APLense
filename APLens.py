@@ -15,7 +15,7 @@ import difflib
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄", layout="wide")
 
-# --- COMPACT SIDEBAR CSS & CUSTOM STYLING ---
+# --- COMPACT SIDEBAR CSS & PILL-SHAPED SOCIAL BUTTONS ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -27,6 +27,29 @@ st.markdown("""
             padding: 15px;
             border-radius: 8px;
             text-align: center;
+        }
+        /* Custom Pill Button Styling to match brand reference */
+        .social-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            background-color: #ffffff;
+            color: #3c4043;
+            border: 1px solid #dadce0;
+            padding: 10px 16px;
+            border-radius: 24px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            margin-bottom: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: background-color 0.2s;
+        }
+        .social-btn:hover {
+            background-color: #f8f9fa;
+            border-color: #c6c6c6;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -46,53 +69,56 @@ if "saved_reports" not in st.session_state:
 rc = st.session_state.reset_count
 
 # ==========================================
-# AUTHENTICATION WALL (If not logged in)
+# TOP HEADER & OPTIONAL LOGIN BAR
 # ==========================================
-if not st.session_state.logged_in:
-    st.title("📄 APLens - Secure Login")
-    st.markdown("### Sign in to access advanced batch comparison history, custom retention, and saved preferences.")
-    
-    st.info("🔒 **Privacy Guarantee:** No personal information or profile data is saved by logging in using these identity providers. Authentication is used solely to secure your active session and preferences.")
-    
-    col_l1, col_l2, col_l3, col_l4 = st.columns(4)
-    
-    with col_l1:
-        if st.button("🔵 Sign in with Google", use_container_width=True):
-            st.session_state.logged_in = True
-            st.session_state.user_email = "user@gmail.com"
-            st.session_state.user_provider = "Google"
+header_col1, header_col2 = st.columns([0.75, 0.25])
+
+with header_col1:
+    st.title("📄 APLens - Plagiarism Suite")
+
+with header_col2:
+    if st.session_state.logged_in:
+        st.markdown(f"<div style='text-align: right; padding-top: 15px;'>👤 <b>{st.session_state.user_provider} User</b></div>", unsafe_allow_html=True)
+        if st.button("Sign Out", key=f"sign_out_top_{rc}", type="secondary"):
+            st.session_state.logged_in = False
             st.rerun()
-    with col_l2:
-        if st.button("📘 Sign in with Facebook", use_container_width=True):
-            st.session_state.logged_in = True
-            st.session_state.user_email = "user@facebook.com"
-            st.session_state.user_provider = "Facebook"
-            st.rerun()
-    with col_l3:
-        if st.button("💼 Sign in with LinkedIn", use_container_width=True):
-            st.session_state.logged_in = True
-            st.session_state.user_email = "user@linkedin.com"
-            st.session_state.user_provider = "LinkedIn"
-            st.rerun()
-    with col_l4:
-        if st.button(" Sign in with Apple", use_container_width=True):
-            st.session_state.logged_in = True
-            st.session_state.user_email = "user@appleid.com"
-            st.session_state.user_provider = "Apple"
-            st.rerun()
+    else:
+        with st.popover("🔐 Sign In"):
+            st.markdown("### Choose an Identity Provider")
+            st.caption("No personal data or profile information is stored. Authentication is used solely for session preferences and report history.")
             
-    st.stop()
+            # Simulated Social Logins with Branded Names
+            if st.button("🟢 Sign in with Google", use_container_width=True):
+                st.session_state.logged_in = True
+                st.session_state.user_email = "user@gmail.com"
+                st.session_state.user_provider = "Google"
+                st.rerun()
+            if st.button("🟦 Sign in with Microsoft", use_container_width=True):
+                st.session_state.logged_in = True
+                st.session_state.user_email = "user@outlook.com"
+                st.session_state.user_provider = "Microsoft"
+                st.rerun()
+            if st.button("🍎 Sign in with Apple", use_container_width=True):
+                st.session_state.logged_in = True
+                st.session_state.user_email = "user@appleid.com"
+                st.session_state.user_provider = "Apple"
+                st.rerun()
+            if st.button("📘 Sign in with Facebook", use_container_width=True):
+                st.session_state.logged_in = True
+                st.session_state.user_email = "user@facebook.com"
+                st.session_state.user_provider = "Facebook"
+                st.rerun()
+            if st.button("💼 Sign in with LinkedIn", use_container_width=True):
+                st.session_state.logged_in = True
+                st.session_state.user_email = "user@linkedin.com"
+                st.session_state.user_provider = "LinkedIn"
+                st.rerun()
+
+st.markdown("---")
 
 # ==========================================
 # SIDEBAR SETUP (State Persistence & Settings)
 # ==========================================
-st.sidebar.write(f"👤 **Logged in via {st.session_state.user_provider}**")
-if st.sidebar.button("🚪 Sign Out", type="secondary"):
-    st.session_state.logged_in = False
-    st.rerun()
-
-st.sidebar.markdown("---")
-
 # 1. Navigation Radio Buttons (Persisted in state)
 nav_options = ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "📁 Report History Dashboard", "💡 User Guide & Help"]
 default_nav_idx = st.session_state.get("last_nav_idx", 0)
@@ -122,17 +148,20 @@ st.session_state.saved_threshold = similarity_threshold
 
 st.sidebar.markdown("---")
 
-# 3. Report History Controls
+# 3. Report History Controls (Only active or functional when logged in)
 st.sidebar.subheader("Report History Settings")
-save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_reports_toggle_{rc}")
+if st.session_state.logged_in:
+    save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_reports_toggle_{rc}")
+    retention_intervals = ["1 day", "1 week", "10 days", "A Fortnight", "3 weeks", "A Month"]
+    selected_interval = st.sidebar.selectbox("Retention Period", retention_intervals, index=1, key=f"retention_interval_{rc}")
 
-retention_intervals = ["1 day", "1 week", "10 days", "A Fortnight", "3 weeks", "A Month"]
-selected_interval = st.sidebar.selectbox("Retention Period", retention_intervals, index=1, key=f"retention_interval_{rc}")
-
-interval_days_map = {"1 day": 1, "1 week": 7, "10 days": 10, "A Fortnight": 14, "3 weeks": 21, "A Month": 30}
-days_to_add = interval_days_map.get(selected_interval, 7)
-expiry_date = (datetime.datetime.now() + datetime.timedelta(days=days_to_add)).strftime("%Y-%m-%d")
-st.sidebar.caption(f"📅 Auto-deletion date: **{expiry_date}**")
+    interval_days_map = {"1 day": 1, "1 week": 7, "10 days": 10, "A Fortnight": 14, "3 weeks": 21, "A Month": 30}
+    days_to_add = interval_days_map.get(selected_interval, 7)
+    expiry_date = (datetime.datetime.now() + datetime.timedelta(days=days_to_add)).strftime("%Y-%m-%d")
+    st.sidebar.caption(f"📅 Auto-deletion date: **{expiry_date}**")
+else:
+    save_reports_toggle = False
+    st.sidebar.info("💡 **Sign in** (via top-right icon) to enable automated report history storage and custom retention settings.")
 
 st.sidebar.markdown("---")
 
@@ -202,7 +231,6 @@ if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
     
     course_assignment_name = st.text_input("📚 Course Name / Assignment Title", placeholder="e.g., CS101 - Final Research Paper", key=f"plag_course_name_{rc}")
-    
     st.write("Upload multiple student submissions (including Word, PDF, Excel, Markdown), a direct folder, or a ZIP archive below.")
 
     default_upload_idx = st.session_state.get("saved_upload_type_idx", 0)
@@ -348,7 +376,7 @@ if app_mode == "Plagiarism Checker":
                     st.session_state.analysis_type_run = analysis_mode_label
                     st.session_state.active_course_name = course_assignment_name.strip() or "Unnamed Assignment"
                     
-                    if save_reports_toggle:
+                    if st.session_state.logged_in and save_reports_toggle:
                         report_entry = {
                             "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "type": analysis_mode_label,
@@ -725,7 +753,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                         st.session_state.deep_report_content = report_content
                         st.session_state.deep_filename = "common_paragraphs_report.txt"
                 
-                if save_reports_toggle and "deep_report_content" in st.session_state:
+                if st.session_state.logged_in and save_reports_toggle and "deep_report_content" in st.session_state:
                     deep_entry = {
                         "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "type": f"Deep Dive ({analysis_type})",
@@ -792,47 +820,51 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 # ==========================================
 elif app_mode == "📁 Report History Dashboard":
     st.header("📁 Saved Report History Dashboard")
-    st.write("Review, reload, or download your previously generated batch and deep-dive comparison reports stored during your session.")
-
-    if not st.session_state.saved_reports:
-        st.info("No reports saved yet. Enable the **Save Generated Reports** toggle in the sidebar and run an analysis to populate your history dashboard!")
+    
+    if not st.session_state.logged_in:
+        st.warning("🔒 Please sign in using the **Sign In** button at the top right to access and view your saved report history.")
     else:
-        if st.button("🗑️ Clear All Saved History", type="secondary"):
-            st.session_state.saved_reports = []
-            st.rerun()
+        st.write("Review, reload, or download your previously generated batch and deep-dive comparison reports stored during your session.")
 
-        for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
-            with st.expander(f"📌 [{rep['timestamp']}] Course: {rep['course']} — Type: {rep['type']} (Expires: {rep['expiry']})"):
-                st.write(f"**Analysis Type:** {rep['type']}")
-                st.write(f"**Course/Assignment:** {rep['course']}")
-                st.write(f"**Auto-Deletion Expiry Date:** {rep['expiry']}")
+        if not st.session_state.saved_reports:
+            st.info("No reports saved yet. Enable the **Save Generated Reports** toggle in the sidebar and run an analysis to populate your history dashboard!")
+        else:
+            if st.button("🗑️ Clear All Saved History", type="secondary"):
+                st.session_state.saved_reports = []
+                st.rerun()
 
-                if "df" in rep:
-                    st.write(f"**Files Scanned:** {rep['files_count']}")
-                    st.dataframe(rep['df'].style.format("{:.2f}%"), height=200)
-                    
-                    out_hist = io.BytesIO()
-                    with pd.ExcelWriter(out_hist, engine='openpyxl') as writer:
-                        rep['df'].to_excel(writer, sheet_name='Plagiarism Report')
-                    hist_excel_data = out_hist.getvalue()
-                    
-                    st.download_button(
-                        label=f"📥 Download Excel Report [{rep['timestamp']}]",
-                        data=hist_excel_data,
-                        file_name=f"report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"hist_dl_excel_{idx}"
-                    )
-                elif "content" in rep:
-                    st.write(f"**Files Compared:** {rep['files_compared']}")
-                    st.text_area("Report Content Preview", rep['content'], height=200, key=f"hist_preview_{idx}")
-                    st.download_button(
-                        label=f"📥 Download Text Report [{rep['timestamp']}]",
-                        data=rep['content'],
-                        file_name=rep['filename'],
-                        mime="text/plain",
-                        key=f"hist_dl_txt_{idx}"
-                    )
+            for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
+                with st.expander(f"📌 [{rep['timestamp']}] Course: {rep['course']} — Type: {rep['type']} (Expires: {rep['expiry']})"):
+                    st.write(f"**Analysis Type:** {rep['type']}")
+                    st.write(f"**Course/Assignment:** {rep['course']}")
+                    st.write(f"**Auto-Deletion Expiry Date:** {rep['expiry']}")
+
+                    if "df" in rep:
+                        st.write(f"**Files Scanned:** {rep['files_count']}")
+                        st.dataframe(rep['df'].style.format("{:.2f}%"), height=200)
+                        
+                        out_hist = io.BytesIO()
+                        with pd.ExcelWriter(out_hist, engine='openpyxl') as writer:
+                            rep['df'].to_excel(writer, sheet_name='Plagiarism Report')
+                        hist_excel_data = out_hist.getvalue()
+                        
+                        st.download_button(
+                            label=f"📥 Download Excel Report [{rep['timestamp']}]",
+                            data=hist_excel_data,
+                            file_name=f"report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"hist_dl_excel_{idx}"
+                        )
+                    elif "content" in rep:
+                        st.write(f"**Files Compared:** {rep['files_compared']}")
+                        st.text_area("Report Content Preview", rep['content'], height=200, key=f"hist_preview_{idx}")
+                        st.download_button(
+                            label=f"📥 Download Text Report [{rep['timestamp']}]",
+                            data=rep['content'],
+                            file_name=rep['filename'],
+                            mime="text/plain",
+                            key=f"hist_dl_txt_{idx}"
+                        )
 
 # ==========================================
 # MODE 4: USER GUIDE & HELP
@@ -853,9 +885,9 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("2. How It Works & Key Features")
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
-        "* **Secure Authentication:** Log in via Google, Facebook, LinkedIn, or Apple IDs with zero personal profile retention.\n"
+        "* **Optional Authentication:** Sign in optionally via Google, Microsoft, Apple, Facebook, or LinkedIn to manage report history.\n"
         "* **Course & Assignment Tagging:** Organize reports cleanly by entering course names and assignment titles.\n"
-        "* **Report History Dashboard & Auto-Deletion:** Save reports on demand with retention windows ranging from 1 day to 1 month, complete with automated expiration tracking.\n"
+        "* **Report History Dashboard & Auto-Deletion:** Save reports on demand with retention windows ranging from 1 day to 1 month.\n"
         "* **Sidebar Preference Persistence:** Remembers your N-gram slider ranges, flagging thresholds, and upload method preferences.\n"
         "* **Global Smart Filtering:** Upload instructions once to automatically strip out boilerplate text across student papers.\n"
         "* **Batch Upload & File Size Limits:** Upload individual files (5MB), folders, or `.zip` archives (100MB)."
