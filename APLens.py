@@ -106,6 +106,13 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "use, making it safe and secure for checking sensitive submissions!"
     )
 
+
+st.sidebar.markdown("---")
+
+# Beta Testing Launch Button
+if st.sidebar.button("🧪 Launch Beta Testing (New Features)", type="secondary"):
+    st.switch_page("pages/APLens_Beta.py")
+
 # Helper function to extract text from any file object
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
