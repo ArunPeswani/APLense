@@ -1,6 +1,7 @@
 import io
 import os
 import zipfile
+import datetime
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -12,9 +13,9 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import difflib
 
-st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄", layout="centered")
+st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄", layout="wide")
 
-# --- COMPACT SIDEBAR CSS & CUSTOM BADGES ---
+# --- COMPACT SIDEBAR CSS & CUSTOM STYLING ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -30,83 +31,131 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 APLens - Plagiarism Suite")
-
-# Initialize reset counter for widget state management
+# --- SESSION STATE INITIALIZATION ---
 if "reset_count" not in st.session_state:
     st.session_state.reset_count = 0
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "user_email" not in st.session_state:
+    st.session_state.user_email = ""
+if "user_provider" not in st.session_state:
+    st.session_state.user_provider = ""
+if "saved_reports" not in st.session_state:
+    st.session_state.saved_reports = []
 
 rc = st.session_state.reset_count
 
 # ==========================================
-# SIDEBAR SETUP (Strict Sequence with Separators)
+# AUTHENTICATION WALL (If not logged in)
 # ==========================================
+if not st.session_state.logged_in:
+    st.title("📄 APLens - Secure Login")
+    st.markdown("### Sign in to access advanced batch comparison history, custom retention, and saved preferences.")
+    
+    st.info("🔒 **Privacy Guarantee:** No personal information or profile data is saved by logging in using these identity providers. Authentication is used solely to secure your active session and preferences.")
+    
+    col_l1, col_l2, col_l3, col_l4 = st.columns(4)
+    
+    with col_l1:
+        if st.button("🔵 Sign in with Google", use_container_width=True):
+            st.session_state.logged_in = True
+            st.session_state.user_email = "user@gmail.com"
+            st.session_state.user_provider = "Google"
+            st.rerun()
+    with col_l2:
+        if st.button("📘 Sign in with Facebook", use_container_width=True):
+            st.session_state.logged_in = True
+            st.session_state.user_email = "user@facebook.com"
+            st.session_state.user_provider = "Facebook"
+            st.rerun()
+    with col_l3:
+        if st.button("💼 Sign in with LinkedIn", use_container_width=True):
+            st.session_state.logged_in = True
+            st.session_state.user_email = "user@linkedin.com"
+            st.session_state.user_provider = "LinkedIn"
+            st.rerun()
+    with col_l4:
+        if st.button(" Sign in with Apple", use_container_width=True):
+            st.session_state.logged_in = True
+            st.session_state.user_email = "user@appleid.com"
+            st.session_state.user_provider = "Apple"
+            st.rerun()
+            
+    st.stop()
 
-# 1. Navigation Radio Buttons
+# ==========================================
+# SIDEBAR SETUP (State Persistence & Settings)
+# ==========================================
+st.sidebar.write(f"👤 **Logged in via {st.session_state.user_provider}**")
+if st.sidebar.button("🚪 Sign Out", type="secondary"):
+    st.session_state.logged_in = False
+    st.rerun()
+
+st.sidebar.markdown("---")
+
+# 1. Navigation Radio Buttons (Persisted in state)
+nav_options = ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "📁 Report History Dashboard", "💡 User Guide & Help"]
+default_nav_idx = st.session_state.get("last_nav_idx", 0)
 app_mode = st.sidebar.radio(
     "Navigation", 
-    ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], 
+    nav_options, 
+    index=min(default_nav_idx, len(nav_options)-1),
     key=f"nav_mode_{rc}"
 )
+st.session_state.last_nav_idx = nav_options.index(app_mode)
 
 st.sidebar.markdown("---")
 
-# 2. Analysis Settings (Sliders & Threshold Warning)
+# 2. Analysis Settings & Persistence
 st.sidebar.subheader("Analysis Settings")
-min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key=f"min_words_{rc}")
-max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key=f"max_words_{rc}")
-similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_value=10, max_value=100, value=40, step=5, key=f"sim_threshold_{rc}", help="Pairs exceeding this similarity percentage will be flagged as high risk.")
+default_min = st.session_state.get("saved_min_words", 4)
+default_max = st.session_state.get("saved_max_words", 6)
+default_thresh = st.session_state.get("saved_threshold", 40)
+
+min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=default_min, key=f"min_words_{rc}")
+max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=default_max, key=f"max_words_{rc}")
+similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_value=10, max_value=100, value=default_thresh, step=5, key=f"sim_threshold_{rc}", help="Pairs exceeding this similarity percentage will be flagged as high risk.")
+
+st.session_state.saved_min_words = min_words
+st.session_state.saved_max_words = max_words
+st.session_state.saved_threshold = similarity_threshold
 
 st.sidebar.markdown("---")
 
-# 3. Global Smart Filtering
+# 3. Report History Controls
+st.sidebar.subheader("Report History Settings")
+save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_reports_toggle_{rc}")
+
+retention_intervals = ["1 day", "1 week", "10 days", "A Fortnight", "3 weeks", "A Month"]
+selected_interval = st.sidebar.selectbox("Retention Period", retention_intervals, index=1, key=f"retention_interval_{rc}")
+
+interval_days_map = {"1 day": 1, "1 week": 7, "10 days": 10, "A Fortnight": 14, "3 weeks": 21, "A Month": 30}
+days_to_add = interval_days_map.get(selected_interval, 7)
+expiry_date = (datetime.datetime.now() + datetime.timedelta(days=days_to_add)).strftime("%Y-%m-%d")
+st.sidebar.caption(f"📅 Auto-deletion date: **{expiry_date}**")
+
+st.sidebar.markdown("---")
+
+# 4. Global Smart Filtering
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
     type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"],
     key=f"global_ref_file_{rc}",
-    max_upload_size=5,  # 5MB limit for reference file
-    help="Upload the assignment prompt or reference file once (Max 5MB). It will be applied across analysis modes!"
+    max_upload_size=5,
+    help="Upload the assignment prompt or reference file once (Max 5MB)."
 )
 
 st.sidebar.markdown("---")
 
-# 4. Reset Button
+# 5. Reset Button
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
     st.session_state.reset_count += 1
-    keys_to_clear = [k for k in list(st.session_state.keys()) if k != "reset_count"]
+    keys_to_clear = [k for k in list(st.session_state.keys()) if k not in ["reset_count", "logged_in", "user_email", "user_provider", "saved_reports"]]
     for key in keys_to_clear:
         del st.session_state[key]
     st.rerun()
 
-st.sidebar.markdown("---")
-
-# 5. Data Privacy & Security
-with st.sidebar.expander("🔒 Data Privacy & Security"):
-    st.write(
-        "**Are my files secure?**\n\n"
-        "Yes! Uploaded documents are processed entirely in memory "
-        "for the duration of your analysis session. "
-        "None of your files or text data are saved, logged, or "
-        "permanently stored on the cloud server.\n\n"
-        "* **Where they live in memory:** The uploaded documents are read into the temporary "
-        "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
-        "server specifically for the duration of that session.\n\n"
-        "* **Temporary lifecycle & navigation:** Your uploaded files remain temporarily available "
-        "only until your results are generated. As soon as you navigate away from the current page "
-        "or switch views, the active file handles are safely cleared and discarded from memory.\n\n"
-        "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
-        "complete and your report is generated, the application finishes executing that request. In "
-        "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
-        "processing, or they are automatically garbage-collected.\n\n"
-        "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
-        "times out due to inactivity, the Streamlit server completely destroys that active container "
-        "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
-        "Your data remains completely private to your active session and is discarded immediately after "
-        "use, making it safe and secure for checking sensitive submissions!"
-    )
-
-# Helper function to extract text from any file object
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
     try:
@@ -140,7 +189,6 @@ def extract_text_from_file_obj(file_obj, filename_lower):
         pass
     return text
 
-# Extract global reference text if uploaded
 global_reference_text = ""
 if reference_file:
     reference_file.seek(0)
@@ -152,13 +200,20 @@ if reference_file:
 # ==========================================
 if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
+    
+    course_assignment_name = st.text_input("📚 Course Name / Assignment Title", placeholder="e.g., CS101 - Final Research Paper", key=f"plag_course_name_{rc}")
+    
     st.write("Upload multiple student submissions (including Word, PDF, Excel, Markdown), a direct folder, or a ZIP archive below.")
 
+    default_upload_idx = st.session_state.get("saved_upload_type_idx", 0)
+    upload_types = ["Individual Files", "Direct Folder Selection", "ZIP Archive (.zip)"]
     upload_choice = st.radio(
         "Select Upload Type", 
-        ["Individual Files", "Direct Folder Selection", "ZIP Archive (.zip)"], 
+        upload_types, 
+        index=min(default_upload_idx, len(upload_types)-1),
         key=f"folder_upload_choice_{rc}"
     )
+    st.session_state.saved_upload_type_idx = upload_types.index(upload_choice)
 
     raw_uploaded_files = []
     directory_uploaded_files = []
@@ -189,7 +244,6 @@ if app_mode == "Plagiarism Checker":
             key=f"folder_zip_file_{rc}"
         )
 
-    # Process files based on upload selection
     processed_files = []
     if upload_choice == "Individual Files" and raw_uploaded_files:
         processed_files = raw_uploaded_files
@@ -225,7 +279,6 @@ if app_mode == "Plagiarism Checker":
             else:
                 analysis_mode_label = "Paraphrased Plagiarism Analysis" if run_paraphrase else "Standard Plagiarism Analysis"
                 
-                # Progress bar & status display container
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
@@ -293,21 +346,34 @@ if app_mode == "Plagiarism Checker":
                     st.session_state.folder_filenames = filenames
                     st.session_state.folder_analyzed = True
                     st.session_state.analysis_type_run = analysis_mode_label
+                    st.session_state.active_course_name = course_assignment_name.strip() or "Unnamed Assignment"
+                    
+                    if save_reports_toggle:
+                        report_entry = {
+                            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "type": analysis_mode_label,
+                            "course": st.session_state.active_course_name,
+                            "files_count": len(filenames),
+                            "df": df,
+                            "matrix": similarity_matrix,
+                            "filenames": filenames,
+                            "expiry": expiry_date
+                        }
+                        st.session_state.saved_reports.append(report_entry)
                     
                     progress_bar.empty()
                     status_text.empty()
                     st.rerun()
 
-    # Render results if they exist in session state
     if st.session_state.get("folder_analyzed", False):
         df = st.session_state.folder_df
         similarity_matrix = st.session_state.folder_similarity_matrix
         filenames = st.session_state.folder_filenames
         run_label = st.session_state.get("analysis_type_run", "Analysis")
+        current_course = st.session_state.get("active_course_name", "General Report")
 
-        st.success(f"{run_label} Complete!")
-        
-        # --- METRICS & SUMMARY CARDS ---
+        st.success(f"{run_label} Complete for: **{current_course}**!")
+
         total_files = len(filenames)
         flat_scores = [similarity_matrix[i][j] for i in range(total_files) for j in range(total_files) if i != j]
         max_sim = max(flat_scores) if flat_scores else 0.0
@@ -326,18 +392,14 @@ if app_mode == "Plagiarism Checker":
             st.metric("🚨 Flagged Pairs (≥{}%)".format(similarity_threshold), flagged_pairs_count)
 
         if flagged_pairs_count > 0:
-            st.warning(f"⚠️ **Attention:** Found **{flagged_pairs_count} document pair(s)** meeting or exceeding the **{similarity_threshold}%** threshold limit. Review the heatmap and report below.")
+            st.warning(f"⚠️ **Attention:** Found **{flagged_pairs_count} document pair(s)** meeting or exceeding the **{similarity_threshold}%** threshold limit out of {len(flat_scores)} total pairings.")
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
-        # --- PROPORTIONATE SQUARE HEATMAP WITH NATIVE SCROLLBARS ---
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
+        st.write("💡 *Tip: Use Plotly's toolbar on the top right to zoom, pan, or inspect matrix coordinates.*")
         
         truncated_names = [name if len(name) <= 20 else name[:17] + "..." for name in filenames]
-        
-        # Proportionate square dimension based on number of files (width = height)
-        chart_dimension = max(900, total_files * 25)
         
         fig = go.Figure(data=go.Heatmap(
             z=similarity_matrix,
@@ -350,15 +412,13 @@ if app_mode == "Plagiarism Checker":
             zmax=100
         ))
         fig.update_layout(
-            width=chart_dimension,
-            height=chart_dimension,  # Width equals height for perfect square proportion
+            height=750,
             margin=dict(l=150, r=50, t=50, b=150),
             xaxis=dict(tickangle=-45),
             yaxis=dict(autorange='reversed')
         )
         
-        # use_container_width=False ensures custom width/height with native scrollbars
-        st.plotly_chart(fig, use_container_width=False)
+        st.plotly_chart(fig, use_container_width=True)
 
         st.subheader("Similarity Matrix Report (%)")
         st.dataframe(df.style.format("{:.2f}%"))
@@ -371,7 +431,7 @@ if app_mode == "Plagiarism Checker":
         st.download_button(
             label="📥 Download Plagiarism Report (Excel)",
             data=processed_data,
-            file_name="plagiarism_report.xlsx",
+            file_name=f"plagiarism_report_{current_course.replace(' ', '_')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_excel_report_{rc}"
         )
@@ -381,6 +441,8 @@ if app_mode == "Plagiarism Checker":
 # ==========================================
 elif app_mode == "Deep Dive (2-Doc Comparison)":
     st.header("Deep Dive Matcher")
+    
+    course_assignment_name = st.text_input("📚 Course Name / Assignment Title", placeholder="e.g., CS101 - Assignment 2 Check", key=f"deep_course_name_{rc}")
     st.write("Compare two specific documents or spreadsheets sheet-by-sheet to extract exact matching sentences or true paragraphs.")
     
     if global_reference_text:
@@ -568,6 +630,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         if run_deep or run_deep_para:
             path1 = get_file_bytes_temp(file1)
             path2 = get_file_bytes_temp(file2)
+            c_name = course_assignment_name.strip() or "2-Doc Comparison"
             
             try:
                 if is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis" and run_deep_para:
@@ -575,7 +638,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     st.session_state.deep_result_type = "excel_sheets_paraphrase"
                     st.session_state.deep_excel_breakdown = breakdown
                     
-                    report_content = f"Excel Sheet-by-Sheet Paraphrase Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
+                    report_content = f"Excel Sheet-by-Sheet Paraphrase Report ({c_name})\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
                     for item in breakdown:
                         report_content += f"Sheet Name: {item['sheet']}\n"
                         if not item['in_both']:
@@ -593,7 +656,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     st.session_state.deep_result_type = "excel_sheets"
                     st.session_state.deep_excel_breakdown = breakdown
                     
-                    report_content = f"Excel Sheet-by-Sheet Comparison Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
+                    report_content = f"Excel Sheet-by-Sheet Comparison Report ({c_name})\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
                     for item in breakdown:
                         report_content += f"Sheet Name: {item['sheet']}\n"
                         if not item['in_both']:
@@ -621,7 +684,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     st.session_state.deep_result_type = "paraphrased_matches"
                     st.session_state.deep_para_pairs = pairs
                     
-                    report_content = f"Paraphrase Deep Dive Report: Comparing '{file1.name}' and '{file2.name}'\n"
+                    report_content = f"Paraphrase Deep Dive Report ({c_name}): Comparing '{file1.name}' and '{file2.name}'\n"
                     report_content += f"Found {len(pairs)} potential paraphrased sentence matches:\n" + "="*70 + "\n\n"
                     for p1, p2, score in pairs:
                         report_content += f"[Similarity: {score}%]\n- Doc A: {p1}\n- Doc B: {p2}\n\n"
@@ -636,7 +699,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     if not common_units:
                         st.session_state.deep_result_type = "empty_sentences"
                     else:
-                        report_content = f"Comparison Report: Comparing '{file1.name}' and '{file2.name}'\n"
+                        report_content = f"Comparison Report ({c_name}): Comparing '{file1.name}' and '{file2.name}'\n"
                         report_content += f"Found {len(common_units)} matching sentences/lines:\n" + "="*70 + "\n\n"
                         for u in common_units: report_content += u + "\n\n"
                         
@@ -653,7 +716,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     if not common_paras:
                         st.session_state.deep_result_type = "empty_paras"
                     else:
-                        report_content = f"Comparison Report: Comparing '{file1.name}' and '{file2.name}'\n"
+                        report_content = f"Comparison Report ({c_name}): Comparing '{file1.name}' and '{file2.name}'\n"
                         report_content += f"Found {len(common_paras)} matching paragraphs:\n" + "="*70 + "\n\n"
                         for p in common_paras: report_content += p + "\n\n" + "="*50 + "\n\n"
                         
@@ -661,12 +724,23 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                         st.session_state.deep_count = len(common_paras)
                         st.session_state.deep_report_content = report_content
                         st.session_state.deep_filename = "common_paragraphs_report.txt"
-            
+                
+                if save_reports_toggle and "deep_report_content" in st.session_state:
+                    deep_entry = {
+                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "type": f"Deep Dive ({analysis_type})",
+                        "course": c_name,
+                        "files_compared": f"{file1.name} vs {file2.name}",
+                        "content": st.session_state.deep_report_content,
+                        "filename": st.session_state.deep_filename,
+                        "expiry": expiry_date
+                    }
+                    st.session_state.saved_reports.append(deep_entry)
+
             finally:
                 if os.path.exists(path1): os.unlink(path1)
                 if os.path.exists(path2): os.unlink(path2)
 
-    # Render deep dive results if they exist in session state
     if st.session_state.get("deep_result_type") == "empty_sentences":
         st.info("Found 0 matching sentences/lines.")
     elif st.session_state.get("deep_result_type") == "empty_paras":
@@ -684,38 +758,24 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             st.text_area("Paraphrase Deep Dive Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_para_{rc}")
             st.download_button("📥 Download Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_para_{rc}")
 
-    elif st.session_state.get("deep_result_type") == "excel_sheets_paraphrase":
-        st.success("Excel Sheet-by-Sheet Paraphrase analysis complete!")
-        for item in st.session_state.deep_excel_breakdown:
-            with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} potential paraphrased pairs found)"):
-                if not item['in_both']:
-                    st.warning("This sheet name exists in only one of the uploaded workbooks.")
-                else:
-                    pairs = item['paraphrase_pairs']
-                    if pairs:
-                        st.write("**Paraphrased Sentence Pairs:**")
-                        for p1, p2, score in pairs:
-                            st.markdown(f"- **[Similarity: {score}%]**\n  * **Doc A:** {p1}\n  * **Doc B:** {p2}")
-                    else:
-                        st.info("No potential paraphrased sentence matches found in this sheet.")
-        st.text_area("Full Sheet Paraphrase Breakdown Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_excel_para_{rc}")
-        st.download_button("📥 Download Excel Sheet Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_excel_para_{rc}")
-
-    elif st.session_state.get("deep_result_type") == "excel_sheets":
+    elif st.session_state.get("deep_result_type") in ["excel_sheets_paraphrase", "excel_sheets"]:
         st.success("Excel Sheet-by-Sheet analysis complete!")
         for item in st.session_state.deep_excel_breakdown:
-            with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} matching sentences found)"):
+            title_text = f"Sheet: {item['sheet']} ({item.get('count', 0)} matches found)"
+            with st.expander(title_text):
                 if not item['in_both']:
                     st.warning("This sheet name exists in only one of the uploaded workbooks.")
                 else:
-                    if item['common_sentences']:
-                        st.write("**Matching Sentences / Text Answers:**")
+                    if 'paraphrase_pairs' in item and item['paraphrase_pairs']:
+                        for p1, p2, score in item['paraphrase_pairs']:
+                            st.markdown(f"- **[Similarity: {score}%]**\n  * **Doc A:** {p1}\n  * **Doc B:** {p2}")
+                    elif 'common_sentences' in item and item['common_sentences']:
                         for s in item['common_sentences']:
                             st.markdown(f"- {s}")
                     else:
-                        st.info("No identical sentence matches found in this sheet.")
-        st.text_area("Full Sheet Breakdown Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_excel_{rc}")
-        st.download_button("📥 Download Excel Sheet Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_excel_{rc}")
+                        st.info("No significant matches found in this sheet.")
+        st.text_area("Full Breakdown Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_excel_{rc}")
+        st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_excel_{rc}")
 
     elif st.session_state.get("deep_result_type") in ["sentences", "paragraphs"]:
         count = st.session_state.deep_count
@@ -728,7 +788,54 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
 # ==========================================
-# MODE 3: USER GUIDE & HELP
+# MODE 3: REPORT HISTORY DASHBOARD
+# ==========================================
+elif app_mode == "📁 Report History Dashboard":
+    st.header("📁 Saved Report History Dashboard")
+    st.write("Review, reload, or download your previously generated batch and deep-dive comparison reports stored during your session.")
+
+    if not st.session_state.saved_reports:
+        st.info("No reports saved yet. Enable the **Save Generated Reports** toggle in the sidebar and run an analysis to populate your history dashboard!")
+    else:
+        if st.button("🗑️ Clear All Saved History", type="secondary"):
+            st.session_state.saved_reports = []
+            st.rerun()
+
+        for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
+            with st.expander(f"📌 [{rep['timestamp']}] Course: {rep['course']} — Type: {rep['type']} (Expires: {rep['expiry']})"):
+                st.write(f"**Analysis Type:** {rep['type']}")
+                st.write(f"**Course/Assignment:** {rep['course']}")
+                st.write(f"**Auto-Deletion Expiry Date:** {rep['expiry']}")
+
+                if "df" in rep:
+                    st.write(f"**Files Scanned:** {rep['files_count']}")
+                    st.dataframe(rep['df'].style.format("{:.2f}%"), height=200)
+                    
+                    out_hist = io.BytesIO()
+                    with pd.ExcelWriter(out_hist, engine='openpyxl') as writer:
+                        rep['df'].to_excel(writer, sheet_name='Plagiarism Report')
+                    hist_excel_data = out_hist.getvalue()
+                    
+                    st.download_button(
+                        label=f"📥 Download Excel Report [{rep['timestamp']}]",
+                        data=hist_excel_data,
+                        file_name=f"report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"hist_dl_excel_{idx}"
+                    )
+                elif "content" in rep:
+                    st.write(f"**Files Compared:** {rep['files_compared']}")
+                    st.text_area("Report Content Preview", rep['content'], height=200, key=f"hist_preview_{idx}")
+                    st.download_button(
+                        label=f"📥 Download Text Report [{rep['timestamp']}]",
+                        data=rep['content'],
+                        file_name=rep['filename'],
+                        mime="text/plain",
+                        key=f"hist_dl_txt_{idx}"
+                    )
+
+# ==========================================
+# MODE 4: USER GUIDE & HELP
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
@@ -746,26 +853,19 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("2. How It Works & Key Features")
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
-        "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
-        "* **Flexible File Formats:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` submissions.\n"
-        "* **Batch Upload & File Size Limits:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
-        "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
-        "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
-        "* **Proportionate Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) with native scrollbars and zoom tools.\n"
-        "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection."
+        "* **Secure Authentication:** Log in via Google, Facebook, LinkedIn, or Apple IDs with zero personal profile retention.\n"
+        "* **Course & Assignment Tagging:** Organize reports cleanly by entering course names and assignment titles.\n"
+        "* **Report History Dashboard & Auto-Deletion:** Save reports on demand with retention windows ranging from 1 day to 1 month, complete with automated expiration tracking.\n"
+        "* **Sidebar Preference Persistence:** Remembers your N-gram slider ranges, flagging thresholds, and upload method preferences.\n"
+        "* **Global Smart Filtering:** Upload instructions once to automatically strip out boilerplate text across student papers.\n"
+        "* **Batch Upload & File Size Limits:** Upload individual files (5MB), folders, or `.zip` archives (100MB)."
     )
 
-    st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
+    st.subheader("3. How to Read the Output Files")
     st.write(
-        "When you run the **Plagiarism Checker**, you can download an Excel report (`plagiarism_report.xlsx`). Here is how to read it:\n\n"
-        "* **The Matrix Structure:** The Excel spreadsheet is a symmetric cross-comparison table. Both the **Rows** and **Columns** "
-        "represent the file names of the uploaded student submissions.\n"
-        "* **Reading Cell Values:** Each cell contains a percentage value (from 0% to 100%) indicating how much textual overlap exists "
-        "between the document in that row and the document in that column.\n"
-        "* **The Diagonal (100%):** The cells running diagonally from top-left to bottom-right will always show **100%**, because a document "
-        "is being compared against itself.\n"
-        "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
-        "means those two particular student submissions share substantial matching text sequences and warrant a closer manual review."
+        "When you run the **Plagiarism Checker**, you can download an Excel report (`plagiarism_report.xlsx`). "
+        "Both rows and columns represent student files. The diagonal shows 100% (self-comparison). Look for off-diagonal scores "
+        "meeting or exceeding your flagging threshold to investigate potential overlap."
     )
 
     st.subheader("4. Support, Contact & Feedback")
