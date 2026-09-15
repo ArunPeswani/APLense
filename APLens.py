@@ -259,64 +259,63 @@ if app_mode == "Plagiarism Checker":
                     
                     file.seek(0)
                     txt = extract_text_from_file_obj(file, file.name.lower())
-                    if len(txt.strip()) >= 3:
-                        if global_reference_text.strip():
-                            prompt_words = set(global_reference_text.split())
-                            cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
-                            if len(cleaned_txt.strip()) > 10:
-                                txt = cleaned_txt
-                        
-                        documents.append(txt)
-                        unique_name = f"{idx+1}. {file.name}"
-                        filenames.append(unique_name)
+                    
+                    # Ensure every uploaded file is preserved even if text extraction is sparse/empty
+                    if not txt.strip():
+                        txt = "[Empty or unreadable document content]"
+                    
+                    if global_reference_text.strip():
+                        prompt_words = set(global_reference_text.split())
+                        cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
+                        if len(cleaned_txt.strip()) > 3:
+                            txt = cleaned_txt
+                    
+                    documents.append(txt)
+                    unique_name = f"{idx+1}. {file.name}"
+                    filenames.append(unique_name)
                 
-                if len(documents) < 2:
-                    progress_bar.empty()
-                    status_text.empty()
-                    st.error("Not enough valid text found in the uploaded documents. (Try ensuring images are clear and well-lit).")
+                status_text.text("Calculating similarity matrix across documents...")
+                progress_bar.progress(85)
+                
+                n = len(documents)
+                similarity_matrix = [[0.0]*n for _ in range(n)]
+                
+                if run_paraphrase:
+                    for i in range(n):
+                        for j in range(n):
+                            if i == j:
+                                similarity_matrix[i][j] = 100.0
+                            else:
+                                s = difflib.SequenceMatcher(None, documents[i].lower(), documents[j].lower())
+                                words1 = set(documents[i].lower().split())
+                                words2 = set(documents[j].lower().split())
+                                jaccard = len(words1.intersection(words2)) / max(len(words1.union(words2)), 1)
+                                score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
+                                similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0)
                 else:
-                    status_text.text("Calculating similarity matrix across documents...")
-                    progress_bar.progress(85)
-                    
-                    n = len(documents)
-                    similarity_matrix = [[0.0]*n for _ in range(n)]
-                    
-                    if run_paraphrase:
-                        for i in range(n):
-                            for j in range(n):
-                                if i == j:
-                                    similarity_matrix[i][j] = 100.0
-                                else:
-                                    s = difflib.SequenceMatcher(None, documents[i].lower(), documents[j].lower())
-                                    words1 = set(documents[i].lower().split())
-                                    words2 = set(documents[j].lower().split())
-                                    jaccard = len(words1.intersection(words2)) / max(len(words1.union(words2)), 1)
-                                    score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
-                                    similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0)
-                    else:
-                        vectorizer = TfidfVectorizer(
-                            stop_words='english', 
-                            ngram_range=(min_words, max_words), 
-                            max_features=10000
-                        )
-                        tfidf_matrix = vectorizer.fit_transform(documents)
-                        similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
-                    
-                    progress_bar.progress(100)
-                    status_text.text("Analysis complete!")
-                    
-                    df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
-                    
-                    st.session_state.folder_df = df
-                    st.session_state.folder_similarity_matrix = similarity_matrix
-                    st.session_state.folder_filenames = filenames
-                    st.session_state.folder_analyzed = True
-                    st.session_state.analysis_type_run = analysis_mode_label
-                    st.session_state.base_course = course_assignment_name.strip() or "General Assignment"
-                    
-                    progress_bar.empty()
-                    status_text.empty()
-                    st.rerun()
+                    vectorizer = TfidfVectorizer(
+                        stop_words='english', 
+                        ngram_range=(min_words, max_words), 
+                        max_features=10000
+                    )
+                    tfidf_matrix = vectorizer.fit_transform(documents)
+                    similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
+                
+                progress_bar.progress(100)
+                status_text.text("Analysis complete!")
+                
+                df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
+                
+                st.session_state.folder_df = df
+                st.session_state.folder_similarity_matrix = similarity_matrix
+                st.session_state.folder_filenames = filenames
+                st.session_state.folder_analyzed = True
+                st.session_state.analysis_type_run = analysis_mode_label
+                st.session_state.base_course = course_assignment_name.strip() or "General Assignment"
+                
+                progress_bar.empty()
+                status_text.empty()
+                st.rerun()
 
     if st.session_state.get("folder_analyzed", False):
         df = st.session_state.folder_df
@@ -366,7 +365,6 @@ if app_mode == "Plagiarism Checker":
             zmax=100
         ))
         
-        # Explicit tick configuration to force Plotly to display ALL labels without skipping
         fig.update_layout(
             width=chart_dimension,
             height=chart_dimension,
@@ -753,7 +751,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         for item in st.session_state.deep_excel_breakdown:
             with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} potential paraphrased pairs found)"):
                 if not item['in_both']:
-                    st.warning("This sheet name exists in only one of the uploaded workbooks.")
+                    st.warning("This sheet name exists in only one of the workbooks.")
                 else:
                     pairs = item['paraphrase_pairs']
                     if pairs:
