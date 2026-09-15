@@ -365,12 +365,26 @@ if app_mode == "Plagiarism Checker":
             zmin=0,
             zmax=100
         ))
+        
+        # Explicit tick configuration to force Plotly to display ALL labels without skipping
         fig.update_layout(
             width=chart_dimension,
             height=chart_dimension,
             margin=dict(l=180, r=50, t=50, b=180),
-            xaxis=dict(tickangle=-45, type='category'),
-            yaxis=dict(autorange='reversed', type='category')
+            xaxis=dict(
+                tickangle=-45, 
+                type='category',
+                tickmode='array',
+                tickvals=list(range(len(truncated_names))),
+                ticktext=truncated_names
+            ),
+            yaxis=dict(
+                autorange='reversed', 
+                type='category',
+                tickmode='array',
+                tickvals=list(range(len(truncated_names))),
+                ticktext=truncated_names
+            )
         )
         
         st.plotly_chart(fig, use_container_width=False)
