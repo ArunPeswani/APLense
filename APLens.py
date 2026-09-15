@@ -157,8 +157,11 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 text += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " "
                 
         elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp')):
-            # Direct image file support for scanned handwritten pages (including iPhone HEIC and Android WebP)
-            image = Image.open(io.BytesIO(file_bytes))
+            image = Image.open(io.BytesIO(file_bytes)).convert('L') # Convert to grayscale
+            # Increase contrast to make handwritten strokes pop against paper background
+            from PIL import ImageEnhance
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(2.0)
             text = pytesseract.image_to_string(image, lang='hin+eng')
             
     except Exception as e:
