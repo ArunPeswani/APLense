@@ -11,3 +11,4 @@ seaborn
 pytesseract
 pdf2image
 Pillow
+pillow-heif
