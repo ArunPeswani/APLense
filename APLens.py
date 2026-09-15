@@ -11,13 +11,13 @@ import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import difflib
-from pillow_heif import register_heif_opener
-register_heif_opener() # This teaches Pillow/Python how to seamlessly read .heic files
 
-# OCR and Image Processing Imports
+# OCR, Image Processing & HEIF Support Imports
 from PIL import Image
 from pdf2image import convert_from_bytes
 import pytesseract
+from pillow_heif import register_heif_opener
+register_heif_opener()
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher Suite", page_icon="📑", layout="centered")
 
@@ -65,10 +65,12 @@ similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_valu
 st.sidebar.markdown("---")
 
 # 3. Global Smart Filtering
+supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif", "heic", "heif", "webp")
+
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
-    type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif"],
+    type=list(supported_exts),
     key=f"global_ref_file_{rc}",
     max_upload_size=5,  # 5MB limit for reference file
     help="Upload the assignment prompt or reference file once (Max 5MB). It will be applied across analysis modes!"
@@ -111,7 +113,7 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "use, making it safe and secure for checking sensitive submissions!"
     )
 
-# Helper function to extract text with OCR fallback for handwritten scanned documents
+# Helper function to extract text with bilingual OCR fallback (Hindi + English) for handwritten scans
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
     file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
@@ -128,7 +130,7 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 images = convert_from_bytes(file_bytes)
                 ocr_text = ""
                 for img in images:
-                    ocr_text += pytesseract.image_to_string(img) + " "
+                    ocr_text += pytesseract.image_to_string(img, lang='hin+eng') + " "
                 if len(ocr_text.strip()) > len(text.strip()):
                     text = ocr_text
 
@@ -154,10 +156,10 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                             tokens.append(val_str)
                 text += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " "
                 
-        elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif')):
-            # Direct image file support for scanned handwritten pages
+        elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp')):
+            # Direct image file support for scanned handwritten pages (including iPhone HEIC and Android WebP)
             image = Image.open(io.BytesIO(file_bytes))
-            text = pytesseract.image_to_string(image)
+            text = pytesseract.image_to_string(image, lang='hin+eng')
             
     except Exception as e:
         pass
@@ -188,11 +190,10 @@ if app_mode == "Plagiarism Checker":
     raw_uploaded_files = []
     directory_uploaded_files = []
     zip_uploaded_file = None
-    supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif")
 
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif) - Max 5MB per file",
+            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif, .heic, .heif, .webp) - Max 5MB per file",
             type=list(supported_exts),
             accept_multiple_files=True,
             max_upload_size=5,
@@ -409,9 +410,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif"], max_upload_size=5, key=f"deep_file1_{rc}")
+        file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=list(supported_exts), max_upload_size=5, key=f"deep_file1_{rc}")
     with col2:
-        file2 = st.file_uploader("Select Student B Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif"], max_upload_size=5, key=f"deep_file2_{rc}")
+        file2 = st.file_uploader("Select Student B Document (Max 5MB)", type=list(supported_exts), max_upload_size=5, key=f"deep_file2_{rc}")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -445,7 +446,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     pdf_bytes = f.read()
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
-                    full_text_pdf += pytesseract.image_to_string(img) + "\n\n"
+                    full_text_pdf += pytesseract.image_to_string(img, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -464,9 +465,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                             tokens.append(val_str)
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
-        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif'):
+        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
             image = Image.open(file_path)
-            full_text_img = pytesseract.image_to_string(image)
+            full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
@@ -510,7 +511,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     pdf_bytes = f.read()
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
-                    full_text_pdf += pytesseract.image_to_string(img) + "\n\n"
+                    full_text_pdf += pytesseract.image_to_string(img, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -529,9 +530,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                             tokens.append(val_str)
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
-        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif'):
+        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
             image = Image.open(file_path)
-            full_text_img = pytesseract.image_to_string(image)
+            full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
@@ -798,7 +799,7 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
-        "* **Flexible File Formats & Scanned Handwriting Support:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, `.xls`, and image formats (`.png`, `.jpg`, `.jpeg`, `.tiff`, `.tif`). For scanned handwritten PDFs or image submissions, APLens automatically applies **OCR (Optical Character Recognition)** to extract and compare the handwriting.\n"
+        "* **Flexible File Formats & Scanned Handwriting Support:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, `.xls`, and image formats (`.png`, `.jpg`, `.jpeg`, `.tiff`, `.tif`, `.heic`, `.heif`, `.webp`). For scanned handwritten PDFs or image submissions, APLens automatically applies bilingual **OCR (Optical Character Recognition - Hindi & English)** to extract and compare the handwriting.\n"
         "* **Batch Upload & ZIP Archive Note:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
         "  * ⚠️ *Important ZIP Rule:* If you upload ZIP files for plagiarism checking, **there must be no nested ZIP files inside the uploaded ZIP**. If students submit ZIP files inside the batch archive, the program will not be able to read or check those nested files.\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
