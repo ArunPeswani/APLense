@@ -176,8 +176,9 @@ with header_col2:
             with auth_tab_social:
                 st.caption("Authenticate instantly via Supabase OAuth providers:")
                 try:
-                    google_url = supabase.auth.get_sign_in_url({"provider": "google"})["url"]
-                    github_url = supabase.auth.get_sign_in_url({"provider": "github"})["url"]
+                    project_url = st.secrets["SUPABASE_URL"]
+                    google_url = f"{project_url}/auth/v1/authorize?provider=google"
+                    github_url = f"{project_url}/auth/v1/authorize?provider=github"
                     
                     st.markdown(f"""
                         <div class="login-container">
@@ -192,7 +193,7 @@ with header_col2:
                         </div>
                     """, unsafe_allow_html=True)
                 except Exception as ex:
-                    st.info("Configure your Supabase Project Authentication URL redirect settings to enable social login buttons.")
+                    st.info(f"Error loading social login links: {ex}")
 
 # ==========================================
 # SIDEBAR SETUP
@@ -925,7 +926,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         for item in st.session_state.deep_excel_breakdown:
             with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} potential paraphrased pairs found)"):
                 if not item['in_both']:
-                    st.warning("This sheet name exists in only one of the uploaded workbooks.")
+                    st.warning("This sheet name exists in only one of the workbooks.")
                 else:
                     pairs = item['paraphrase_pairs']
                     if pairs:
@@ -964,7 +965,47 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
 # ==========================================
-# MODE 4: USER GUIDE & HELP
+# MODE 4: REPORT HISTORY DASHBOARD
+# ==========================================
+elif app_mode == "📁 Report History Dashboard":
+    st.header("📁 Saved Report History Dashboard")
+    st.write("Review, inspect, and access previously generated reports within your active retention window.")
+    
+    if not st.session_state.logged_in:
+        st.warning("🔒 Please sign in using the top-right **Account Login** button to view and manage your saved report history.")
+    else:
+        if not st.session_state.saved_reports:
+            st.info("No reports saved yet. Run a Plagiarism Analysis with 'Save Generated Reports' enabled to populate your history.")
+        else:
+            col_dash1, col_dash2 = st.columns([0.8, 0.2])
+            with col_dash2:
+                if st.button("🗑️ Clear All History", type="secondary"):
+                    st.session_state.saved_reports = []
+                    st.rerun()
+
+            for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
+                with st.expander(f"📌 [{rep['timestamp']}] {rep['course']} — {rep['type']} ({rep['files_count']} files, Expires: {rep['expiry']})"):
+                    st.write(f"**Course/Assignment:** {rep['course']}")
+                    st.write(f"**Analysis Mode:** {rep['type']}")
+                    st.write(f"**Files Processed:** {rep['files_count']}")
+                    st.write(f"**Scheduled Expiry:** {rep['expiry']}")
+                    
+                    st.dataframe(rep['df'].style.format("{:.2f}%"))
+                    
+                    h_output = io.BytesIO()
+                    with pd.ExcelWriter(h_output, engine='openpyxl') as writer:
+                        rep['df'].to_excel(writer, sheet_name='Report History')
+                    
+                    st.download_button(
+                        label=f"📥 Download Report ({rep['timestamp']})",
+                        data=h_output.getvalue(),
+                        file_name=f"history_report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"hist_dl_{idx}_{rc}"
+                    )
+
+# ==========================================
+# MODE 5: USER GUIDE & HELP
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
@@ -1003,7 +1044,7 @@ elif app_mode == "💡 User Guide & Help":
         "between the document in that row and the document in that column.\n"
         "* **The Diagonal (100%):** The cells running diagonally from top-left to bottom-right will always show **100%**, because a document "
         "is being compared against itself.\n"
-        "* **Identifying Potential Plagiarism:** Look for high percentage scores off the divider (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
+        "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
         "means those two particular student submissions share substantial matching text sequences and warrant a closer manual review."
     )
 
