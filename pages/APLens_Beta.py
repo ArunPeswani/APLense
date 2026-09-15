@@ -337,7 +337,6 @@ if app_mode == "Plagiarism Checker":
             else:
                 analysis_mode_label = "Paraphrased Plagiarism Analysis" if run_paraphrase else "Standard Plagiarism Analysis"
                 
-                # Progress bar & status display container
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
@@ -432,7 +431,6 @@ if app_mode == "Plagiarism Checker":
 
         st.success(f"{run_label} Complete for **{current_course}**!")
         
-        # --- METRICS & SUMMARY CARDS ---
         total_files = len(filenames)
         flat_scores = [similarity_matrix[i][j] for i in range(total_files) for j in range(total_files) if i != j]
         max_sim = max(flat_scores) if flat_scores else 0.0
@@ -455,13 +453,10 @@ if app_mode == "Plagiarism Checker":
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
-        # --- PROPORTIONATE SQUARE HEATMAP WITH NATIVE SCROLLBARS ---
         st.subheader(f"Visual Heatmap ({run_label})")
         st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
         
         truncated_names = [name if len(name) <= 20 else name[:17] + "..." for name in filenames]
-        
-        # Proportionate square dimension based on number of files (width = height)
         chart_dimension = max(900, total_files * 25)
         
         fig = go.Figure(data=go.Heatmap(
@@ -476,13 +471,12 @@ if app_mode == "Plagiarism Checker":
         ))
         fig.update_layout(
             width=chart_dimension,
-            height=chart_dimension,  # Width equals height for perfect square proportion
+            height=chart_dimension,
             margin=dict(l=150, r=50, t=50, b=150),
             xaxis=dict(tickangle=-45),
             yaxis=dict(autorange='reversed')
         )
         
-        # use_container_width=False ensures custom width/height with native scrollbars
         st.plotly_chart(fig, use_container_width=False)
 
         st.subheader("Similarity Matrix Report (%)")
@@ -890,7 +884,6 @@ elif app_mode == "📁 Report History Dashboard":
                     
                     st.dataframe(rep['df'].style.format("{:.2f}%"))
                     
-                    # History download capability
                     h_output = io.BytesIO()
                     with pd.ExcelWriter(h_output, engine='openpyxl') as writer:
                         rep['df'].to_excel(writer, sheet_name='Report History')
@@ -904,7 +897,7 @@ elif app_mode == "📁 Report History Dashboard":
                     )
 
 # ==========================================
-# MODE 4: USER GUIDE & HELP
+# MODE 4: USER GUIDE & HELP (Updated with ZIP Warning)
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
@@ -924,7 +917,8 @@ elif app_mode == "💡 User Guide & Help":
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
         "* **Flexible File Formats:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` submissions.\n"
-        "* **Batch Upload & File Size Limits:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
+        "* **Batch Upload & ZIP Archive Note:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
+        "  * ⚠️ *Important ZIP Rule:* If you upload ZIP files for plagiarism checking, **there must be no nested ZIP files inside the uploaded ZIP**. If students submit ZIP files inside the batch archive, the program will not be able to read or check those nested files.\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
         "* **Proportionate Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) with native scrollbars and zoom tools.\n"
