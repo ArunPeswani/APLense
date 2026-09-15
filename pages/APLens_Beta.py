@@ -299,11 +299,10 @@ if app_mode == "Plagiarism Checker":
     raw_uploaded_files = []
     directory_uploaded_files = []
     zip_uploaded_file = None
-    supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif")
-
+    supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif", "heic", "heif", "webp")
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif) - Max 5MB per file",
+            "Upload Student Submission Documents ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif", "heic", "heif", "webp") - Max 5MB per file",
             type=list(supported_exts),
             accept_multiple_files=True,
             max_upload_size=5,
