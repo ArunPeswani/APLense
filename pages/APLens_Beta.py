@@ -13,7 +13,12 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import difflib
 
-st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher", page_icon="🧪", layout="centered")
+# OCR and Image Processing Imports
+from PIL import Image
+from pdf2image import convert_from_bytes
+import pytesseract
+
+st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
 
 # --- COMPACT SIDEBAR CSS, CUSTOM BADGES & SOCIAL LOGIN BUTTONS ---
 st.markdown("""
@@ -93,7 +98,7 @@ if "login" in params:
 header_col1, header_col2 = st.columns([0.75, 0.25])
 
 with header_col1:
-    st.title("🧪 APLens - Beta Plagiarism Suite")
+    st.title("🧪 APLens Beta - Plagiarism Suite")
 
 with header_col2:
     if st.session_state.logged_in:
@@ -172,7 +177,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
-    type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"],
+    type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif"],
     key=f"global_ref_file_{rc}",
     max_upload_size=5,  # 5MB limit for reference file
     help="Upload the assignment prompt or reference file once (Max 5MB). It will be applied across analysis modes!"
@@ -215,27 +220,38 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "use, making it safe and secure for checking sensitive submissions!"
     )
 
-# Helper function to extract text from any file object
+# Helper function to extract text with OCR fallback for handwritten scanned documents
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
+    file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
     try:
         if filename_lower.endswith('.pdf'):
-            reader = PdfReader(file_obj)
+            reader = PdfReader(io.BytesIO(file_bytes))
             for page in reader.pages:
                 extracted = page.extract_text()
                 if extracted:
                     text += extracted + " "
+            
+            # OCR Fallback for scanned/handwritten PDFs with missing text layers
+            if len(text.strip()) < 30:
+                images = convert_from_bytes(file_bytes)
+                ocr_text = ""
+                for img in images:
+                    ocr_text += pytesseract.image_to_string(img) + " "
+                if len(ocr_text.strip()) > len(text.strip()):
+                    text = ocr_text
+
         elif filename_lower.endswith('.docx'):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
-                tmp.write(file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read())
+                tmp.write(file_bytes)
                 tmp_path = tmp.name
             text = docx2txt.process(tmp_path)
             os.unlink(tmp_path)
+            
         elif filename_lower.endswith(('.txt', '.rtf', '.md')):
-            content = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
-            text = content.decode('utf-8', errors='ignore')
+            text = file_bytes.decode('utf-8', errors='ignore')
+            
         elif filename_lower.endswith(('.xlsx', '.xls')):
-            file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
             xls = pd.ExcelFile(io.BytesIO(file_bytes))
             for sheet_name in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
@@ -246,6 +262,12 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                         if val_str and val_str.lower() != 'nan':
                             tokens.append(val_str)
                 text += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " "
+                
+        elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif')):
+            # Direct image file support for scanned handwritten pages
+            image = Image.open(io.BytesIO(file_bytes))
+            text = pytesseract.image_to_string(image)
+            
     except Exception as e:
         pass
     return text
@@ -262,7 +284,7 @@ if reference_file:
 # ==========================================
 if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
-    st.write("Upload multiple student submissions (including Word, PDF, Excel, Markdown), a direct folder, or a ZIP archive below.")
+    st.write("Upload multiple student submissions (including Word, PDF, Excel, Markdown, Scans/Images), a direct folder, or a ZIP archive below.")
 
     course_assignment_name = st.text_input("📚 Course Name / Assignment Title (Optional)", placeholder="e.g., CS101 - Final Capstone Project", key=f"course_beta_{rc}")
 
@@ -275,11 +297,11 @@ if app_mode == "Plagiarism Checker":
     raw_uploaded_files = []
     directory_uploaded_files = []
     zip_uploaded_file = None
-    supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls")
+    supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif")
 
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls) - Max 5MB per file",
+            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif) - Max 5MB per file",
             type=list(supported_exts),
             accept_multiple_files=True,
             max_upload_size=5,
@@ -347,7 +369,7 @@ if app_mode == "Plagiarism Checker":
                 total_to_process = len(processed_files)
                 
                 for idx, file in enumerate(processed_files):
-                    status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name}")
+                    status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active if scanned)")
                     progress_bar.progress(10 + int(60 * (idx + 1) / total_to_process))
                     
                     file.seek(0)
@@ -507,9 +529,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"], max_upload_size=5, key=f"deep_file1_{rc}")
+        file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif"], max_upload_size=5, key=f"deep_file1_{rc}")
     with col2:
-        file2 = st.file_uploader("Select Student B Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls"], max_upload_size=5, key=f"deep_file2_{rc}")
+        file2 = st.file_uploader("Select Student B Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif"], max_upload_size=5, key=f"deep_file2_{rc}")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -538,6 +560,12 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted:
                     full_text_pdf += extracted + "\n\n"
+            if len(full_text_pdf.strip()) < 30:
+                with open(file_path, "rb") as f:
+                    pdf_bytes = f.read()
+                images = convert_from_bytes(pdf_bytes)
+                for img in images:
+                    full_text_pdf += pytesseract.image_to_string(img) + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -556,6 +584,10 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                             tokens.append(val_str)
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
+        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif'):
+            image = Image.open(file_path)
+            full_text_img = pytesseract.image_to_string(image)
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
         units = set()
@@ -593,6 +625,12 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted:
                     full_text_pdf += extracted + "\n\n"
+            if len(full_text_pdf.strip()) < 30:
+                with open(file_path, "rb") as f:
+                    pdf_bytes = f.read()
+                images = convert_from_bytes(pdf_bytes)
+                for img in images:
+                    full_text_pdf += pytesseract.image_to_string(img) + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -611,6 +649,10 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                             tokens.append(val_str)
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
+        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif'):
+            image = Image.open(file_path)
+            full_text_img = pytesseract.image_to_string(image)
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
         prompt_words = set(reference_text.split()) if reference_text else set()
         valid_paragraphs = []
@@ -897,7 +939,7 @@ elif app_mode == "📁 Report History Dashboard":
                     )
 
 # ==========================================
-# MODE 4: USER GUIDE & HELP (Updated with ZIP Warning)
+# MODE 4: USER GUIDE & HELP
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
@@ -916,7 +958,7 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
-        "* **Flexible File Formats:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` submissions.\n"
+        "* **Flexible File Formats & Scanned Handwriting Support:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, `.xls`, and image formats (`.png`, `.jpg`, `.jpeg`, `.tiff`, `.tif`). For scanned handwritten PDFs or image submissions, APLens automatically applies **OCR (Optical Character Recognition)** to extract and compare the handwriting.\n"
         "* **Batch Upload & ZIP Archive Note:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
         "  * ⚠️ *Important ZIP Rule:* If you upload ZIP files for plagiarism checking, **there must be no nested ZIP files inside the uploaded ZIP**. If students submit ZIP files inside the batch archive, the program will not be able to read or check those nested files.\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
