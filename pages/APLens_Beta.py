@@ -34,7 +34,7 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# --- COMPACT SIDEBAR CSS & CUSTOM STYLING ---
+# --- COMPACT SIDEBAR CSS & SOCIAL LOGIN STYLING ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -46,6 +46,41 @@ st.markdown("""
             padding: 15px;
             border-radius: 8px;
             text-align: center;
+        }
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 100%;
+            max-width: 320px;
+            margin: 0 auto;
+        }
+        .social-login-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            height: 44px;
+            background-color: #ffffff;
+            color: #3c4043;
+            border: 1px solid #dadce0;
+            border-radius: 22px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s;
+        }
+        .social-login-btn:hover {
+            background-color: #f8f9fa;
+            border-color: #bdc1c6;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .social-login-btn svg {
+            width: 18px;
+            height: 18px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -61,6 +96,17 @@ if "saved_reports" not in st.session_state:
     st.session_state.saved_reports = []
 
 rc = st.session_state.reset_count_beta
+
+# Handle OAuth redirect query parameters from Supabase
+query_params = st.query_params
+if "access_token" in query_params or "code" in query_params:
+    try:
+        st.session_state.logged_in = True
+        st.session_state.user_email = "Authenticated User"
+        st.query_params.clear()
+        st.rerun()
+    except Exception:
+        pass
 
 # ==========================================
 # TOP HEADER & REAL SUPABASE AUTH BAR
@@ -84,7 +130,7 @@ with header_col2:
     else:
         with st.popover("🔐 Account Login"):
             st.markdown("### Supabase Authentication")
-            auth_tab_in, auth_tab_up = st.tabs(["Sign In", "Sign Up"])
+            auth_tab_in, auth_tab_up, auth_tab_social = st.tabs(["Sign In", "Sign Up", "Social Logins"])
             
             with auth_tab_in:
                 with st.form(key=f"signin_form_{rc}"):
@@ -127,11 +173,30 @@ with header_col2:
                             except Exception as e:
                                 st.error(f"Sign-up failed: {e}")
 
-# ==========================================
-# SIDEBAR SETUP (Strict Sequence with Separators)
-# ==========================================
+            with auth_tab_social:
+                st.caption("Authenticate instantly via Supabase OAuth providers:")
+                try:
+                    google_url = supabase.auth.get_sign_in_url({"provider": "google"})["url"]
+                    github_url = supabase.auth.get_sign_in_url({"provider": "github"})["url"]
+                    
+                    st.markdown(f"""
+                        <div class="login-container">
+                            <a href="{google_url}" target="_self" class="social-login-btn">
+                                <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.13 0-5.78-2.11-6.73-4.96H1.18v3.15C3.15 21.32 7.22 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.18C.43 8.13 0 9.87 0 11.75s.43 3.62 1.18 5.14l4.09-3.15z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.22 0 3.15 2.68 1.18 6.61l4.09 3.15c.95-2.85 3.6-4.96 6.73-4.96z"/></svg>
+                                Sign in with Google
+                            </a>
+                            <a href="{github_url}" target="_self" class="social-login-btn">
+                                <svg viewBox="0 0 24 24"><path fill="#000000" d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02_000000 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                                Sign in with GitHub
+                            </a>
+                        </div>
+                    """, unsafe_allow_html=True)
+                except Exception as ex:
+                    st.info("Configure your Supabase Project Authentication URL redirect settings to enable social login buttons.")
 
-# 1. Navigation Radio Buttons
+# ==========================================
+# SIDEBAR SETUP
+# ==========================================
 app_mode = st.sidebar.radio(
     "Navigation", 
     ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "📁 Report History Dashboard", "💡 User Guide & Help"], 
@@ -140,7 +205,6 @@ app_mode = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 
-# 2. Analysis Settings (Sliders & Threshold Warning)
 st.sidebar.subheader("Analysis Settings")
 min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key=f"min_words_{rc}")
 max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key=f"max_words_{rc}")
@@ -148,7 +212,6 @@ similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_valu
 
 st.sidebar.markdown("---")
 
-# 3. Report History Settings (Logged-In Feature)
 st.sidebar.subheader("Report History Settings")
 if st.session_state.logged_in:
     save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_toggle_{rc}")
@@ -164,7 +227,6 @@ else:
 
 st.sidebar.markdown("---")
 
-# 4. Global Smart Filtering
 supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif", "heic", "heif", "webp")
 
 st.sidebar.subheader("Global Smart Filtering")
@@ -178,7 +240,6 @@ reference_file = st.sidebar.file_uploader(
 
 st.sidebar.markdown("---")
 
-# 5. Reset Button
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
     st.session_state.reset_count_beta += 1
     keys_to_clear = [k for k in list(st.session_state.keys()) if k not in ["reset_count_beta", "logged_in", "user_email", "saved_reports"]]
@@ -188,7 +249,6 @@ if st.sidebar.button("🔄 Reset Everything", type="secondary"):
 
 st.sidebar.markdown("---")
 
-# 6. Data Privacy & Security (Full Verbatim Text)
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
         "**Are my files secure?**\n\n"
@@ -213,7 +273,6 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "use, making it safe and secure for checking sensitive submissions!"
     )
 
-# Helper function to extract text with bilingual OCR fallback (Hindi + English) for handwritten scans
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
     file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
@@ -266,7 +325,6 @@ def extract_text_from_file_obj(file_obj, filename_lower):
         pass
     return text
 
-# Extract global reference text if uploaded
 global_reference_text = ""
 if reference_file:
     reference_file.seek(0)
@@ -374,7 +432,8 @@ if app_mode == "Plagiarism Checker":
                                 txt = cleaned_txt
                         
                         documents.append(txt)
-                        filenames.append(file.name)
+                        unique_name = f"{idx+1}. {file.name}"
+                        filenames.append(unique_name)
                 
                 if len(documents) < 2:
                     progress_bar.empty()
@@ -468,8 +527,8 @@ if app_mode == "Plagiarism Checker":
         st.subheader(f"Visual Heatmap ({run_label})")
         st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
         
-        truncated_names = [name if len(name) <= 20 else name[:17] + "..." for name in filenames]
-        chart_dimension = max(900, total_files * 25)
+        truncated_names = [name if len(name) <= 25 else name[:22] + "..." for name in filenames]
+        chart_dimension = max(900, total_files * 35)
         
         fig = go.Figure(data=go.Heatmap(
             z=similarity_matrix,
@@ -484,9 +543,9 @@ if app_mode == "Plagiarism Checker":
         fig.update_layout(
             width=chart_dimension,
             height=chart_dimension,
-            margin=dict(l=150, r=50, t=50, b=150),
-            xaxis=dict(tickangle=-45),
-            yaxis=dict(autorange='reversed')
+            margin=dict(l=180, r=50, t=50, b=180),
+            xaxis=dict(tickangle=-45, type='category'),
+            yaxis=dict(autorange='reversed', type='category')
         )
         
         st.plotly_chart(fig, use_container_width=False)
@@ -893,49 +952,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
     if not file1 or not file2:
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
-# ==========================================
-# MODE 3: REPORT HISTORY DASHBOARD
-# ==========================================
-elif app_mode == "📁 Report History Dashboard":
-    st.header("📁 Saved Report History Dashboard")
-    st.write("Review, inspect, and access previously generated reports within your active retention window.")
-    
-    if not st.session_state.logged_in:
-        st.warning("🔒 Please sign in using the top-right **Account Login** button to view and manage your saved report history.")
-    else:
-        if not st.session_state.saved_reports:
-            st.info("No reports saved yet. Run a Plagiarism Analysis with 'Save Generated Reports' enabled to populate your history.")
-        else:
-            col_dash1, col_dash2 = st.columns([0.8, 0.2])
-            with col_dash2:
-                if st.button("🗑️ Clear All History", type="secondary"):
-                    st.session_state.saved_reports = []
-                    st.rerun()
-
-            for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
-                with st.expander(f"📌 [{rep['timestamp']}] {rep['course']} — {rep['type']} ({rep['files_count']} files, Expires: {rep['expiry']})"):
-                    st.write(f"**Course/Assignment:** {rep['course']}")
-                    st.write(f"**Analysis Mode:** {rep['type']}")
-                    st.write(f"**Files Processed:** {rep['files_count']}")
-                    st.write(f"**Scheduled Expiry:** {rep['expiry']}")
-                    
-                    st.dataframe(rep['df'].style.format("{:.2f}%"))
-                    
-                    h_output = io.BytesIO()
-                    with pd.ExcelWriter(h_output, engine='openpyxl') as writer:
-                        rep['df'].to_excel(writer, sheet_name='Report History')
-                    
-                    st.download_button(
-                        label=f"📥 Download Report ({rep['timestamp']})",
-                        data=h_output.getvalue(),
-                        file_name=f"history_report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"hist_dl_{idx}_{rc}"
-                    )
-
-# ==========================================
-# MODE 4: USER GUIDE & HELP
-# ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
     st.write("Welcome to APLens! This comprehensive guide explains all tools, analysis modes, and features available in the suite.")
@@ -959,9 +975,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
         "* **Proportionate Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) with native scrollbars and zoom tools.\n"
-        "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection.\n"
-        "* **Beta Feature - Real Supabase Authentication:** Secure user sign-in and sign-up using Supabase backend accounts.\n"
-        "* **Beta Feature - Report History Dashboard:** Store reports temporarily in session state with configurable retention windows (1 day to 1 month)."
+        "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection."
     )
 
     st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
