@@ -13,7 +13,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import difflib
 
 # OCR, Image Processing & HEIF Support Imports
-from PIL import Image
+from PIL import Image, ImageEnhance
 from pdf2image import convert_from_bytes
 import pytesseract
 from pillow_heif import register_heif_opener
@@ -113,7 +113,7 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "use, making it safe and secure for checking sensitive submissions!"
     )
 
-# Helper function to extract text with bilingual OCR fallback (Hindi + English) for handwritten scans
+# Helper function to extract text with enhanced preprocessing and relaxed OCR acceptance
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
     file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
@@ -125,12 +125,14 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 if extracted:
                     text += extracted + " "
             
-            # OCR Fallback for scanned/handwritten PDFs with missing text layers
-            if len(text.strip()) < 30:
+            # OCR Fallback for scanned/handwritten PDFs
+            if len(text.strip()) < 15:
                 images = convert_from_bytes(file_bytes)
                 ocr_text = ""
                 for img in images:
-                    ocr_text += pytesseract.image_to_string(img, lang='hin+eng') + " "
+                    img_gray = img.convert('L')
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    ocr_text += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + " "
                 if len(ocr_text.strip()) > len(text.strip()):
                     text = ocr_text
 
@@ -157,11 +159,9 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 text += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " "
                 
         elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp')):
-            image = Image.open(io.BytesIO(file_bytes)).convert('L') # Convert to grayscale
-            # Increase contrast to make handwritten strokes pop against paper background
-            from PIL import ImageEnhance
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(2.0)
+            # Direct image preprocessing for handwritten scans
+            image = Image.open(io.BytesIO(file_bytes)).convert('L')
+            image = ImageEnhance.Contrast(image).enhance(2.0)
             text = pytesseract.image_to_string(image, lang='hin+eng')
             
     except Exception as e:
@@ -264,16 +264,17 @@ if app_mode == "Plagiarism Checker":
                 total_to_process = len(processed_files)
                 
                 for idx, file in enumerate(processed_files):
-                    status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active if scanned)")
+                    status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active)")
                     progress_bar.progress(10 + int(60 * (idx + 1) / total_to_process))
                     
                     file.seek(0)
                     txt = extract_text_from_file_obj(file, file.name.lower())
-                    if txt.strip():
+                    # Relaxed validation: accept if text has at least 3 characters
+                    if len(txt.strip()) >= 3:
                         if global_reference_text.strip():
                             prompt_words = set(global_reference_text.split())
                             cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
-                            if len(cleaned_txt.strip()) > 50:
+                            if len(cleaned_txt.strip()) > 10:
                                 txt = cleaned_txt
                         
                         documents.append(txt)
@@ -282,7 +283,7 @@ if app_mode == "Plagiarism Checker":
                 if len(documents) < 2:
                     progress_bar.empty()
                     status_text.empty()
-                    st.error("Not enough valid text found in the uploaded documents.")
+                    st.error("Not enough valid text found in the uploaded documents. (Try ensuring images are clear and well-lit).")
                 else:
                     status_text.text("Calculating similarity matrix across documents...")
                     progress_bar.progress(85)
@@ -426,7 +427,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         s = sentence.strip()
         if re.fullmatch(r'\d+\.?', s):
             return False
-        if len(s.split()) < 4:
+        if len(s.split()) < 2: # Relaxed word limit for handwriting lines
             return False
         return True
 
@@ -444,12 +445,14 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted:
                     full_text_pdf += extracted + "\n\n"
-            if len(full_text_pdf.strip()) < 30:
+            if len(full_text_pdf.strip()) < 15:
                 with open(file_path, "rb") as f:
                     pdf_bytes = f.read()
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
-                    full_text_pdf += pytesseract.image_to_string(img, lang='hin+eng') + "\n\n"
+                    img_gray = img.convert('L')
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -469,7 +472,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
-            image = Image.open(file_path)
+            image = Image.open(file_path).convert('L')
+            image = ImageEnhance.Contrast(image).enhance(2.0)
             full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
@@ -509,12 +513,14 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted:
                     full_text_pdf += extracted + "\n\n"
-            if len(full_text_pdf.strip()) < 30:
+            if len(full_text_pdf.strip()) < 15:
                 with open(file_path, "rb") as f:
                     pdf_bytes = f.read()
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
-                    full_text_pdf += pytesseract.image_to_string(img, lang='hin+eng') + "\n\n"
+                    img_gray = img.convert('L')
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -534,7 +540,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
-            image = Image.open(file_path)
+            image = Image.open(file_path).convert('L')
+            image = ImageEnhance.Contrast(image).enhance(2.0)
             full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
@@ -546,7 +553,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
             
             sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
-            if len(sentences) >= 2 and len(cleaned_block.split()) >= 8:
+            if len(sentences) >= 1 and len(cleaned_block.split()) >= 4:
                 valid_paragraphs.append(cleaned_block)
         return valid_paragraphs
 
@@ -725,7 +732,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
     if st.session_state.get("deep_result_type") == "empty_sentences":
         st.info("Found 0 matching sentences/lines.")
     elif st.session_state.get("deep_result_type") == "empty_paras":
-        st.info("Found 0 matching paragraphs (with at least 2 sentences).")
+        st.info("Found 0 matching paragraphs.")
     elif st.session_state.get("deep_result_type") == "paraphrased_matches":
         pairs = st.session_state.deep_para_pairs
         if not pairs:
