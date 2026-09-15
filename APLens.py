@@ -11,6 +11,8 @@ import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import difflib
+from pillow_heif import register_heif_opener
+register_heif_opener() # This teaches Pillow/Python how to seamlessly read .heic files
 
 # OCR and Image Processing Imports
 from PIL import Image
