@@ -8,3 +8,6 @@ pypdf
 plotly
 matplotlib
 seaborn
+pytesseract
+pdf2image
+Pillow
