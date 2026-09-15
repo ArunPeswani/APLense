@@ -12,7 +12,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import difflib
 
-st.set_page_config(page_title="APLens - Plagiarism & Matcher", page_icon="📄", layout="centered")
+st.set_page_config(page_title="APLens - Plagiarism & Matcher Suite", page_icon="📑", layout="centered")
 
 # --- COMPACT SIDEBAR CSS & CUSTOM BADGES ---
 st.markdown("""
@@ -30,9 +30,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 APLens - Plagiarism Suite")
-
-# Initialize reset counter for widget state management
+# --- SESSION STATE INITIALIZATION ---
 if "reset_count" not in st.session_state:
     st.session_state.reset_count = 0
 
@@ -81,7 +79,7 @@ if st.sidebar.button("🔄 Reset Everything", type="secondary"):
 
 st.sidebar.markdown("---")
 
-# 5. Data Privacy & Security
+# 5. Data Privacy & Security (Full Verbatim Text)
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
         "**Are my files secure?**\n\n"
@@ -114,7 +112,8 @@ def extract_text_from_file_obj(file_obj, filename_lower):
             reader = PdfReader(file_obj)
             for page in reader.pages:
                 extracted = page.extract_text()
-                if extracted: text += extracted + " "
+                if extracted:
+                    text += extracted + " "
         elif filename_lower.endswith('.docx'):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp:
                 tmp.write(file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read())
@@ -153,6 +152,8 @@ if reference_file:
 if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
     st.write("Upload multiple student submissions (including Word, PDF, Excel, Markdown), a direct folder, or a ZIP archive below.")
+
+    course_assignment_name = st.text_input("📚 Course Name / Assignment Title (Optional)", placeholder="e.g., CS101 - Final Capstone Project", key=f"course_base_{rc}")
 
     upload_choice = st.radio(
         "Select Upload Type", 
@@ -225,7 +226,6 @@ if app_mode == "Plagiarism Checker":
             else:
                 analysis_mode_label = "Paraphrased Plagiarism Analysis" if run_paraphrase else "Standard Plagiarism Analysis"
                 
-                # Progress bar & status display container
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
@@ -293,6 +293,7 @@ if app_mode == "Plagiarism Checker":
                     st.session_state.folder_filenames = filenames
                     st.session_state.folder_analyzed = True
                     st.session_state.analysis_type_run = analysis_mode_label
+                    st.session_state.base_course = course_assignment_name.strip() or "General Assignment"
                     
                     progress_bar.empty()
                     status_text.empty()
@@ -304,10 +305,10 @@ if app_mode == "Plagiarism Checker":
         similarity_matrix = st.session_state.folder_similarity_matrix
         filenames = st.session_state.folder_filenames
         run_label = st.session_state.get("analysis_type_run", "Analysis")
+        current_course = st.session_state.get("base_course", "Assignment")
 
-        st.success(f"{run_label} Complete!")
+        st.success(f"{run_label} Complete for **{current_course}**!")
         
-        # --- METRICS & SUMMARY CARDS ---
         total_files = len(filenames)
         flat_scores = [similarity_matrix[i][j] for i in range(total_files) for j in range(total_files) if i != j]
         max_sim = max(flat_scores) if flat_scores else 0.0
@@ -330,13 +331,10 @@ if app_mode == "Plagiarism Checker":
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
-        # --- PROPORTIONATE SQUARE HEATMAP WITH NATIVE SCROLLBARS ---
         st.subheader(f"Visual Heatmap ({run_label})")
         st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
         
         truncated_names = [name if len(name) <= 20 else name[:17] + "..." for name in filenames]
-        
-        # Proportionate square dimension based on number of files (width = height)
         chart_dimension = max(900, total_files * 25)
         
         fig = go.Figure(data=go.Heatmap(
@@ -351,13 +349,12 @@ if app_mode == "Plagiarism Checker":
         ))
         fig.update_layout(
             width=chart_dimension,
-            height=chart_dimension,  # Width equals height for perfect square proportion
+            height=chart_dimension,
             margin=dict(l=150, r=50, t=50, b=150),
             xaxis=dict(tickangle=-45),
             yaxis=dict(autorange='reversed')
         )
         
-        # use_container_width=False ensures custom width/height with native scrollbars
         st.plotly_chart(fig, use_container_width=False)
 
         st.subheader("Similarity Matrix Report (%)")
@@ -371,7 +368,7 @@ if app_mode == "Plagiarism Checker":
         st.download_button(
             label="📥 Download Plagiarism Report (Excel)",
             data=processed_data,
-            file_name="plagiarism_report.xlsx",
+            file_name=f"plagiarism_report_{current_course.replace(' ', '_')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_excel_report_{rc}"
         )
@@ -417,7 +414,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             full_text_pdf = ""
             for page in reader.pages:
                 extracted = page.extract_text()
-                if extracted: full_text_pdf += extracted + "\n\n"
+                if extracted:
+                    full_text_pdf += extracted + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -441,12 +439,14 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         units = set()
         for block in raw_blocks:
             cleaned_block = re.sub(r'\s+', ' ', block)
-            if not cleaned_block: continue
+            if not cleaned_block:
+                continue
             
             if prompt_words:
                 cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
             
-            if not cleaned_block.strip(): continue
+            if not cleaned_block.strip():
+                continue
             sub_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
             if len(sub_sentences) <= 1:
                 if is_valid_sentence(cleaned_block):
@@ -469,7 +469,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             full_text_pdf = ""
             for page in reader.pages:
                 extracted = page.extract_text()
-                if extracted: full_text_pdf += extracted + "\n\n"
+                if extracted:
+                    full_text_pdf += extracted + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -531,7 +532,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     matched_pairs = []
                     for u1 in sents1:
                         for u2 in sents2:
-                            if u1 == u2: continue
+                            if u1 == u2:
+                                continue
                             ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
                             if 0.65 <= ratio < 1.0:
                                 matched_pairs.append((u1, u2, round(ratio * 100, 1)))
@@ -612,7 +614,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     pairs = []
                     for u1 in units1:
                         for u2 in units2:
-                            if u1 == u2: continue
+                            if u1 == u2:
+                                continue
                             ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
                             if 0.65 <= ratio < 1.0:
                                 pairs.append((u1, u2, round(ratio * 100, 1)))
@@ -638,7 +641,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     else:
                         report_content = f"Comparison Report: Comparing '{file1.name}' and '{file2.name}'\n"
                         report_content += f"Found {len(common_units)} matching sentences/lines:\n" + "="*70 + "\n\n"
-                        for u in common_units: report_content += u + "\n\n"
+                        for u in common_units:
+                            report_content += u + "\n\n"
                         
                         st.session_state.deep_result_type = "sentences"
                         st.session_state.deep_count = len(common_units)
@@ -655,7 +659,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                     else:
                         report_content = f"Comparison Report: Comparing '{file1.name}' and '{file2.name}'\n"
                         report_content += f"Found {len(common_paras)} matching paragraphs:\n" + "="*70 + "\n\n"
-                        for p in common_paras: report_content += p + "\n\n" + "="*50 + "\n\n"
+                        for p in common_paras:
+                            report_content += p + "\n\n" + "="*50 + "\n\n"
                         
                         st.session_state.deep_result_type = "paragraphs"
                         st.session_state.deep_count = len(common_paras)
@@ -663,8 +668,10 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                         st.session_state.deep_filename = "common_paragraphs_report.txt"
             
             finally:
-                if os.path.exists(path1): os.unlink(path1)
-                if os.path.exists(path2): os.unlink(path2)
+                if os.path.exists(path1):
+                    os.unlink(path1)
+                if os.path.exists(path2):
+                    os.unlink(path2)
 
     # Render deep dive results if they exist in session state
     if st.session_state.get("deep_result_type") == "empty_sentences":
@@ -728,7 +735,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
 # ==========================================
-# MODE 3: USER GUIDE & HELP
+# MODE 3: USER GUIDE & HELP (Updated with ZIP Warning)
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
@@ -748,7 +755,8 @@ elif app_mode == "💡 User Guide & Help":
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
         "* **Flexible File Formats:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, and `.xls` submissions.\n"
-        "* **Batch Upload & File Size Limits:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
+        "* **Batch Upload & ZIP Archive Note:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
+        "  * ⚠️ *Important ZIP Rule:* If you upload ZIP files for plagiarism checking, **there must be no nested ZIP files inside the uploaded ZIP**. If students submit ZIP files inside the batch archive, the program will not be able to read or check those nested files.\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
         "* **Proportionate Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) with native scrollbars and zoom tools.\n"
