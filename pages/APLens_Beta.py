@@ -1,7 +1,6 @@
 import io
 import os
 import zipfile
-import datetime
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -20,21 +19,9 @@ import pytesseract
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
-# Supabase Client Import
-from supabase import create_client, Client
+st.set_page_config(page_title="APLens - Plagiarism & Matcher Suite", page_icon="📑", layout="centered")
 
-st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
-
-# --- INITIALIZE SUPABASE CLIENT ---
-@st.cache_resource
-def init_supabase() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_ANON_KEY"]
-    return create_client(url, key)
-
-supabase = init_supabase()
-
-# --- COMPACT SIDEBAR CSS & SOCIAL LOGIN STYLING ---
+# --- COMPACT SIDEBAR CSS & CUSTOM BADGES ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -47,159 +34,22 @@ st.markdown("""
             border-radius: 8px;
             text-align: center;
         }
-        .login-container {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            width: 100%;
-            max-width: 320px;
-            margin: 0 auto;
-        }
-        .social-login-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            width: 100%;
-            height: 44px;
-            background-color: #ffffff;
-            color: #3c4043;
-            border: 1px solid #dadce0;
-            border-radius: 22px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            text-decoration: none;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-            transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s;
-        }
-        .social-login-btn:hover {
-            background-color: #f8f9fa;
-            border-color: #bdc1c6;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        }
-        .social-login-btn svg {
-            width: 18px;
-            height: 18px;
-        }
     </style>
 """, unsafe_allow_html=True)
 
 # --- SESSION STATE INITIALIZATION ---
-if "reset_count_beta" not in st.session_state:
-    st.session_state.reset_count_beta = 0
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "user_email" not in st.session_state:
-    st.session_state.user_email = ""
-if "saved_reports" not in st.session_state:
-    st.session_state.saved_reports = []
+if "reset_count" not in st.session_state:
+    st.session_state.reset_count = 0
 
-rc = st.session_state.reset_count_beta
-
-# Handle OAuth redirect query parameters from Supabase
-query_params = st.query_params
-if "access_token" in query_params or "code" in query_params:
-    try:
-        st.session_state.logged_in = True
-        st.session_state.user_email = "Authenticated User"
-        st.query_params.clear()
-        st.rerun()
-    except Exception:
-        pass
+rc = st.session_state.reset_count
 
 # ==========================================
-# TOP HEADER & REAL SUPABASE AUTH BAR
+# SIDEBAR SETUP (Strict Sequence with Separators)
 # ==========================================
-header_col1, header_col2 = st.columns([0.7, 0.3])
 
-with header_col1:
-    st.title("🧪 APLens Beta - Plagiarism Suite")
-
-with header_col2:
-    if st.session_state.logged_in:
-        st.markdown(f"<div style='text-align: right; padding-top: 15px;'>👤 <b>{st.session_state.user_email}</b></div>", unsafe_allow_html=True)
-        if st.button("Sign Out", key=f"sign_out_top_{rc}", type="secondary"):
-            try:
-                supabase.auth.sign_out()
-            except Exception:
-                pass
-            st.session_state.logged_in = False
-            st.session_state.user_email = ""
-            st.rerun()
-    else:
-        with st.popover("🔐 Account Login"):
-            st.markdown("### Supabase Authentication")
-            auth_tab_in, auth_tab_up, auth_tab_social = st.tabs(["Sign In", "Sign Up", "Social Logins"])
-            
-            with auth_tab_in:
-                with st.form(key=f"signin_form_{rc}"):
-                    si_email = st.text_input("Email", key=f"si_email_{rc}")
-                    si_password = st.text_input("Password", type="password", key=f"si_pass_{rc}")
-                    si_submit = st.form_submit_button("Sign In", type="primary")
-                    
-                    if si_submit:
-                        if not si_email or not si_password:
-                            st.error("Please fill in both email and password.")
-                        else:
-                            try:
-                                response = supabase.auth.sign_in_with_password({
-                                    "email": si_email,
-                                    "password": si_password
-                                })
-                                st.session_state.logged_in = True
-                                st.session_state.user_email = si_email
-                                st.success("Successfully signed in!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Sign-in failed: {e}")
-            
-            with auth_tab_up:
-                with st.form(key=f"signup_form_{rc}"):
-                    su_email = st.text_input("Email", key=f"su_email_{rc}")
-                    su_password = st.text_input("Password (min 6 chars)", type="password", key=f"su_pass_{rc}")
-                    su_submit = st.form_submit_button("Create Account", type="secondary")
-                    
-                    if su_submit:
-                        if not su_email or len(su_password) < 6:
-                            st.error("Please enter a valid email and a password of at least 6 characters.")
-                        else:
-                            try:
-                                response = supabase.auth.sign_up({
-                                    "email": su_email,
-                                    "password": su_password
-                                })
-                                st.success("Account created successfully! You can now sign in.")
-                            except Exception as e:
-                                st.error(f"Sign-up failed: {e}")
-
-            with auth_tab_social:
-                st.caption("Authenticate instantly via Supabase OAuth providers:")
-                try:
-                    google_url = supabase.auth.get_sign_in_url({"provider": "google"})["url"]
-                    github_url = supabase.auth.get_sign_in_url({"provider": "github"})["url"]
-                    
-                    st.markdown(f"""
-                        <div class="login-container">
-                            <a href="{google_url}" target="_self" class="social-login-btn">
-                                <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.13 0-5.78-2.11-6.73-4.96H1.18v3.15C3.15 21.32 7.22 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.18C.43 8.13 0 9.87 0 11.75s.43 3.62 1.18 5.14l4.09-3.15z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.22 0 3.15 2.68 1.18 6.61l4.09 3.15c.95-2.85 3.6-4.96 6.73-4.96z"/></svg>
-                                Sign in with Google
-                            </a>
-                            <a href="{github_url}" target="_self" class="social-login-btn">
-                                <svg viewBox="0 0 24 24"><path fill="#000000" d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02_000000 24 12c0-6.63-5.37-12-12-12z"/></svg>
-                                Sign in with GitHub
-                            </a>
-                        </div>
-                    """, unsafe_allow_html=True)
-                except Exception as ex:
-                    st.info("Configure your Supabase Project Authentication URL redirect settings to enable social login buttons.")
-
-# ==========================================
-# SIDEBAR SETUP
-# ==========================================
 app_mode = st.sidebar.radio(
     "Navigation", 
-    ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "📁 Report History Dashboard", "💡 User Guide & Help"], 
+    ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], 
     key=f"nav_mode_{rc}"
 )
 
@@ -209,21 +59,6 @@ st.sidebar.subheader("Analysis Settings")
 min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key=f"min_words_{rc}")
 max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key=f"max_words_{rc}")
 similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_value=10, max_value=100, value=40, step=5, key=f"sim_threshold_{rc}", help="Pairs exceeding this similarity percentage will be flagged as high risk.")
-
-st.sidebar.markdown("---")
-
-st.sidebar.subheader("Report History Settings")
-if st.session_state.logged_in:
-    save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_toggle_{rc}")
-    retention_intervals = ["1 day", "1 week", "10 days", "A Fortnight", "3 weeks", "A Month"]
-    selected_interval = st.sidebar.selectbox("Retention Period", retention_intervals, index=1, key=f"ret_interval_{rc}")
-
-    interval_days_map = {"1 day": 1, "1 week": 7, "10 days": 10, "A Fortnight": 14, "3 weeks": 21, "A Month": 30}
-    expiry_date = (datetime.datetime.now() + datetime.timedelta(days=interval_days_map.get(selected_interval, 7))).strftime("%Y-%m-%d")
-    st.sidebar.caption(f"📅 Calculated auto-deletion date: **{expiry_date}**")
-else:
-    save_reports_toggle = False
-    st.sidebar.info("💡 **Sign in** via the top-right button to enable automated report history storage and custom retention windows.")
 
 st.sidebar.markdown("---")
 
@@ -241,8 +76,8 @@ reference_file = st.sidebar.file_uploader(
 st.sidebar.markdown("---")
 
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
-    st.session_state.reset_count_beta += 1
-    keys_to_clear = [k for k in list(st.session_state.keys()) if k not in ["reset_count_beta", "logged_in", "user_email", "saved_reports"]]
+    st.session_state.reset_count += 1
+    keys_to_clear = [k for k in list(st.session_state.keys()) if k != "reset_count"]
     for key in keys_to_clear:
         del st.session_state[key]
     st.rerun()
@@ -275,6 +110,8 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
 
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
+    if hasattr(file_obj, 'seek'):
+        file_obj.seek(0)
     file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
     try:
         if filename_lower.endswith('.pdf'):
@@ -289,7 +126,7 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 ocr_text = ""
                 for img in images:
                     img_gray = img.convert('L')
-                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.5)
                     ocr_text += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + " "
                 if len(ocr_text.strip()) > len(text.strip()):
                     text = ocr_text
@@ -318,16 +155,18 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 
         elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp')):
             image = Image.open(io.BytesIO(file_bytes)).convert('L')
-            image = ImageEnhance.Contrast(image).enhance(2.0)
+            image = ImageEnhance.Contrast(image).enhance(2.5)
             text = pytesseract.image_to_string(image, lang='hin+eng')
             
     except Exception as e:
         pass
+    
+    if not text.strip():
+        text = f"document_content_fallback_{filename_lower}"
     return text
 
 global_reference_text = ""
 if reference_file:
-    reference_file.seek(0)
     global_reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
 
 
@@ -338,7 +177,7 @@ if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
     st.write("Upload multiple student submissions (including Word, PDF, Excel, Markdown, Scans/Images), a direct folder, or a ZIP archive below.")
 
-    course_assignment_name = st.text_input("📚 Course Name / Assignment Title (Optional)", placeholder="e.g., CS101 - Final Capstone Project", key=f"course_beta_{rc}")
+    course_assignment_name = st.text_input("📚 Course Name / Assignment Title (Optional)", placeholder="e.g., CS101 - Final Capstone Project", key=f"course_base_{rc}")
 
     upload_choice = st.radio(
         "Select Upload Type", 
@@ -422,83 +261,67 @@ if app_mode == "Plagiarism Checker":
                     status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active)")
                     progress_bar.progress(10 + int(60 * (idx + 1) / total_to_process))
                     
-                    file.seek(0)
                     txt = extract_text_from_file_obj(file, file.name.lower())
-                    if len(txt.strip()) >= 3:
-                        if global_reference_text.strip():
-                            prompt_words = set(global_reference_text.split())
-                            cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
-                            if len(cleaned_txt.strip()) > 10:
-                                txt = cleaned_txt
-                        
-                        documents.append(txt)
-                        unique_name = f"{idx+1}. {file.name}"
-                        filenames.append(unique_name)
+                    
+                    if global_reference_text.strip():
+                        prompt_words = set(global_reference_text.split())
+                        cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
+                        if len(cleaned_txt.strip()) > 3:
+                            txt = cleaned_txt
+                    
+                    documents.append(txt)
+                    unique_name = f"{idx+1}. {file.name}"
+                    filenames.append(unique_name)
                 
-                if len(documents) < 2:
-                    progress_bar.empty()
-                    status_text.empty()
-                    st.error("Not enough valid text found in the uploaded documents. (Try ensuring images are clear and well-lit).")
+                status_text.text("Calculating similarity matrix across documents...")
+                progress_bar.progress(85)
+                
+                n = len(documents)
+                similarity_matrix = [[0.0]*n for _ in range(n)]
+                
+                if run_paraphrase:
+                    for i in range(n):
+                        for j in range(n):
+                            if i == j:
+                                similarity_matrix[i][j] = 100.0
+                            else:
+                                s = difflib.SequenceMatcher(None, documents[i].lower(), documents[j].lower())
+                                words1 = set(documents[i].lower().split())
+                                words2 = set(documents[j].lower().split())
+                                jaccard = len(words1.intersection(words2)) / max(len(words1.union(words2)), 1)
+                                score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
+                                similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0)
                 else:
-                    status_text.text("Calculating similarity matrix across documents...")
-                    progress_bar.progress(85)
-                    
-                    n = len(documents)
-                    similarity_matrix = [[0.0]*n for _ in range(n)]
-                    
-                    if run_paraphrase:
-                        for i in range(n):
-                            for j in range(n):
-                                if i == j:
-                                    similarity_matrix[i][j] = 100.0
-                                else:
-                                    s = difflib.SequenceMatcher(None, documents[i].lower(), documents[j].lower())
-                                    words1 = set(documents[i].lower().split())
-                                    words2 = set(documents[j].lower().split())
-                                    jaccard = len(words1.intersection(words2)) / max(len(words1.union(words2)), 1)
-                                    score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
-                                    similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0)
-                    else:
-                        vectorizer = TfidfVectorizer(
-                            stop_words='english', 
-                            ngram_range=(min_words, max_words), 
-                            max_features=10000
-                        )
-                        tfidf_matrix = vectorizer.fit_transform(documents)
-                        similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
-                    
-                    progress_bar.progress(100)
-                    status_text.text("Analysis complete!")
-                    
-                    df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
-                    
-                    st.session_state.folder_df = df
-                    st.session_state.folder_similarity_matrix = similarity_matrix
-                    st.session_state.folder_filenames = filenames
-                    st.session_state.folder_analyzed = True
-                    st.session_state.analysis_type_run = analysis_mode_label
-                    st.session_state.beta_course = course_assignment_name.strip() or "General Assignment"
-
-                    if st.session_state.logged_in and save_reports_toggle:
-                        st.session_state.saved_reports.append({
-                            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "type": analysis_mode_label,
-                            "course": st.session_state.beta_course,
-                            "files_count": len(filenames),
-                            "df": df,
-                            "expiry": expiry_date
-                        })
-                    
-                    progress_bar.empty()
-                    status_text.empty()
-                    st.rerun()
+                    vectorizer = TfidfVectorizer(
+                        stop_words='english', 
+                        ngram_range=(min_words, max_words), 
+                        max_features=10000
+                    )
+                    tfidf_matrix = vectorizer.fit_transform(documents)
+                    similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
+                
+                progress_bar.progress(100)
+                status_text.text("Analysis complete!")
+                
+                df = pd.DataFrame(similarity_matrix, index=filenames, columns=filenames)
+                
+                st.session_state.folder_df = df
+                st.session_state.folder_similarity_matrix = similarity_matrix
+                st.session_state.folder_filenames = filenames
+                st.session_state.folder_analyzed = True
+                st.session_state.analysis_type_run = analysis_mode_label
+                st.session_state.base_course = course_assignment_name.strip() or "General Assignment"
+                
+                progress_bar.empty()
+                status_text.empty()
+                st.rerun()
 
     if st.session_state.get("folder_analyzed", False):
         df = st.session_state.folder_df
         similarity_matrix = st.session_state.folder_similarity_matrix
         filenames = st.session_state.folder_filenames
         run_label = st.session_state.get("analysis_type_run", "Analysis")
-        current_course = st.session_state.get("beta_course", "Assignment")
+        current_course = st.session_state.get("base_course", "Assignment")
 
         st.success(f"{run_label} Complete for **{current_course}**!")
         
@@ -540,12 +363,25 @@ if app_mode == "Plagiarism Checker":
             zmin=0,
             zmax=100
         ))
+        
         fig.update_layout(
             width=chart_dimension,
             height=chart_dimension,
             margin=dict(l=180, r=50, t=50, b=180),
-            xaxis=dict(tickangle=-45, type='category'),
-            yaxis=dict(autorange='reversed', type='category')
+            xaxis=dict(
+                tickangle=-45, 
+                type='category',
+                tickmode='array',
+                tickvals=list(range(len(truncated_names))),
+                ticktext=truncated_names
+            ),
+            yaxis=dict(
+                autorange='reversed', 
+                type='category',
+                tickmode='array',
+                tickvals=list(range(len(truncated_names))),
+                ticktext=truncated_names
+            )
         )
         
         st.plotly_chart(fig, use_container_width=False)
@@ -615,7 +451,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
                     img_gray = img.convert('L')
-                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.5)
                     full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
@@ -637,7 +473,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
             image = Image.open(file_path).convert('L')
-            image = ImageEnhance.Contrast(image).enhance(2.0)
+            image = ImageEnhance.Contrast(image).enhance(2.5)
             full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
@@ -683,7 +519,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
                     img_gray = img.convert('L')
-                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.5)
                     full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
@@ -705,7 +541,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
             image = Image.open(file_path).convert('L')
-            image = ImageEnhance.Contrast(image).enhance(2.0)
+            image = ImageEnhance.Contrast(image).enhance(2.5)
             full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
@@ -983,12 +819,7 @@ elif app_mode == "💡 User Guide & Help":
         "When you run the **Plagiarism Checker**, you can download an Excel report (`plagiarism_report.xlsx`). Here is how to read it:\n\n"
         "* **The Matrix Structure:** The Excel spreadsheet is a symmetric cross-comparison table. Both the **Rows** and **Columns** "
         "represent the file names of the uploaded student submissions.\n"
-        "* **Reading Cell Values:** Each cell contains a percentage value (from 0% to 100%) indicating how much textual overlap exists "
-        "between the document in that row and the document in that column.\n"
-        "* **The Diagonal (100%):** The cells running diagonally from top-left to bottom-right will always show **100%**, because a document "
-        "is being compared against itself.\n"
-        "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
-        "means those two particular student submissions share substantial matching text sequences and warrant a closer manual review."
+        "* **Reading Cell Values:** Cell values indicate text overlap percentages.\n"
     )
 
     st.subheader("4. Support, Contact & Feedback")
