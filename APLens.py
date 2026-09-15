@@ -66,7 +66,7 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Global Smart Filtering")
 reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
-    type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg"],
+    type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif"],
     key=f"global_ref_file_{rc}",
     max_upload_size=5,  # 5MB limit for reference file
     help="Upload the assignment prompt or reference file once (Max 5MB). It will be applied across analysis modes!"
@@ -152,7 +152,7 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                             tokens.append(val_str)
                 text += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " "
                 
-        elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff')):
+        elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif')):
             # Direct image file support for scanned handwritten pages
             image = Image.open(io.BytesIO(file_bytes))
             text = pytesseract.image_to_string(image)
@@ -186,11 +186,11 @@ if app_mode == "Plagiarism Checker":
     raw_uploaded_files = []
     directory_uploaded_files = []
     zip_uploaded_file = None
-    supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff")
+    supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif")
 
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls, .png, .jpg) - Max 5MB per file",
+            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif) - Max 5MB per file",
             type=list(supported_exts),
             accept_multiple_files=True,
             max_upload_size=5,
@@ -407,9 +407,9 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     col1, col2 = st.columns(2)
     with col1:
-        file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg"], max_upload_size=5, key=f"deep_file1_{rc}")
+        file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif"], max_upload_size=5, key=f"deep_file1_{rc}")
     with col2:
-        file2 = st.file_uploader("Select Student B Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg"], max_upload_size=5, key=f"deep_file2_{rc}")
+        file2 = st.file_uploader("Select Student B Document (Max 5MB)", type=["docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif"], max_upload_size=5, key=f"deep_file2_{rc}")
 
     def get_file_bytes_temp(uploaded_file):
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -462,7 +462,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                             tokens.append(val_str)
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
-        elif ext in ('.png', '.jpg', '.jpeg', '.tiff'):
+        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif'):
             image = Image.open(file_path)
             full_text_img = pytesseract.image_to_string(image)
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
@@ -527,7 +527,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                             tokens.append(val_str)
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
-        elif ext in ('.png', '.jpg', '.jpeg', '.tiff'):
+        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif'):
             image = Image.open(file_path)
             full_text_img = pytesseract.image_to_string(image)
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
@@ -777,7 +777,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
 # ==========================================
-# MODE 3: USER GUIDE & HELP
+# MODE 4: USER GUIDE & HELP
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
@@ -796,7 +796,7 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
-        "* **Flexible File Formats & Scanned Handwriting Support:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, `.xls`, and image formats (`.png`, `.jpg`). For scanned handwritten PDFs or image submissions, APLens automatically applies **OCR (Optical Character Recognition)** to extract and compare the handwriting.\n"
+        "* **Flexible File Formats & Scanned Handwriting Support:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, `.xls`, and image formats (`.png`, `.jpg`, `.jpeg`, `.tiff`, `.tif`). For scanned handwritten PDFs or image submissions, APLens automatically applies **OCR (Optical Character Recognition)** to extract and compare the handwriting.\n"
         "* **Batch Upload & ZIP Archive Note:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
         "  * ⚠️ *Important ZIP Rule:* If you upload ZIP files for plagiarism checking, **there must be no nested ZIP files inside the uploaded ZIP**. If students submit ZIP files inside the batch archive, the program will not be able to read or check those nested files.\n"
         "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
