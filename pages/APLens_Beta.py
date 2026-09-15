@@ -14,15 +14,27 @@ from sklearn.metrics.pairwise import cosine_similarity
 import difflib
 
 # OCR, Image Processing & HEIF Support Imports
-from PIL import Image
+from PIL import Image, ImageEnhance
 from pdf2image import convert_from_bytes
 import pytesseract
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
+# Supabase Client Import
+from supabase import create_client, Client
+
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
 
-# --- COMPACT SIDEBAR CSS, CUSTOM BADGES & SOCIAL LOGIN BUTTONS ---
+# --- INITIALIZE SUPABASE CLIENT ---
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_ANON_KEY"]
+    return create_client(url, key)
+
+supabase = init_supabase()
+
+# --- COMPACT SIDEBAR CSS & CUSTOM STYLING ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -35,41 +47,6 @@ st.markdown("""
             border-radius: 8px;
             text-align: center;
         }
-        .login-container {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            width: 100%;
-            max-width: 320px;
-            margin: 0 auto;
-        }
-        .social-login-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            width: 100%;
-            height: 44px;
-            background-color: #ffffff;
-            color: #3c4043;
-            border: 1px solid #dadce0;
-            border-radius: 22px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            text-decoration: none;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-            transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s;
-        }
-        .social-login-btn:hover {
-            background-color: #f8f9fa;
-            border-color: #bdc1c6;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-        }
-        .social-login-btn svg {
-            width: 18px;
-            height: 18px;
-        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -78,65 +55,77 @@ if "reset_count_beta" not in st.session_state:
     st.session_state.reset_count_beta = 0
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-if "user_provider" not in st.session_state:
-    st.session_state.user_provider = ""
+if "user_email" not in st.session_state:
+    st.session_state.user_email = ""
 if "saved_reports" not in st.session_state:
     st.session_state.saved_reports = []
 
 rc = st.session_state.reset_count_beta
 
-# Handle simulated OAuth query parameters
-params = st.query_params
-if "login" in params:
-    provider = params["login"].capitalize()
-    st.session_state.logged_in = True
-    st.session_state.user_provider = provider
-    st.query_params.clear()
-    st.rerun()
-
 # ==========================================
-# TOP HEADER & OPTIONAL LOGIN BAR
+# TOP HEADER & REAL SUPABASE AUTH BAR
 # ==========================================
-header_col1, header_col2 = st.columns([0.75, 0.25])
+header_col1, header_col2 = st.columns([0.7, 0.3])
 
 with header_col1:
     st.title("🧪 APLens Beta - Plagiarism Suite")
 
 with header_col2:
     if st.session_state.logged_in:
-        st.markdown(f"<div style='text-align: right; padding-top: 15px;'>👤 <b>{st.session_state.user_provider} User</b></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: right; padding-top: 15px;'>👤 <b>{st.session_state.user_email}</b></div>", unsafe_allow_html=True)
         if st.button("Sign Out", key=f"sign_out_top_{rc}", type="secondary"):
+            try:
+                supabase.auth.sign_out()
+            except Exception:
+                pass
             st.session_state.logged_in = False
+            st.session_state.user_email = ""
             st.rerun()
     else:
-        with st.popover("🔐 Sign In"):
-            st.markdown("### Choose an Identity Provider")
-            st.caption("No personal data or student documents are ever permanently saved or logged. Sign-in is used solely for session preferences and report history.")
+        with st.popover("🔐 Account Login"):
+            st.markdown("### Supabase Authentication")
+            auth_tab_in, auth_tab_up = st.tabs(["Sign In", "Sign Up"])
             
-            st.markdown("""
-                <div class="login-container">
-                    <a href="?login=google" target="_self" class="social-login-btn">
-                        <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.66-5.17 3.66-9.17z"/><path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.13 0-5.78-2.11-6.73-4.96H1.18v3.15C3.15 21.32 7.22 24 12 24z"/><path fill="#FBBC05" d="M5.27 14.24c-.25-.72-.38-1.49-.38-2.24s.13-1.52.38-2.24V6.61H1.18C.43 8.13 0 9.87 0 11.75s.43 3.62 1.18 5.14l4.09-3.15z"/><path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.22 0 3.15 2.68 1.18 6.61l4.09 3.15c.95-2.85 3.6-4.96 6.73-4.96z"/></svg>
-                        Sign in with Google
-                    </a>
-                    <a href="?login=microsoft" target="_self" class="social-login-btn">
-                        <svg viewBox="0 0 23 23"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M12 1h10v10H12z"/><path fill="#05a6f0" d="M1 12h10v10H1z"/><path fill="#ffba08" d="M12 12h10v10H12z"/></svg>
-                        Sign in with Microsoft
-                    </a>
-                    <a href="?login=apple" target="_self" class="social-login-btn">
-                        <svg viewBox="0 0 170 170"><path fill="#000000" d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.19-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.26 2.13-9.5 3.24-12.74 3.35-4.35.13-9.16-1.9-14.42-6.08-3.59-2.92-7.5-7.66-11.73-14.22-6.2-9.73-11.17-20.4-14.91-32.02-3.75-11.62-5.62-22.7-5.62-33.23 0-14.35 3.75-26.04 11.24-35.07 7.5-9.03 16.74-13.62 27.72-13.78 4.9 0 10.3 1.25 16.2 3.75 5.89 2.5 9.77 3.76 11.63 3.76 1.52 0 5.6-1.39 12.24-4.17 6.64-2.77 12.58-4.02 17.82-3.75 16.2.76 28.77 7.02 37.71 18.78-14.12 8.68-21.05 20.27-20.78 34.78.27 12.04 5.09 21.84 14.45 29.39 4.35 3.59 9.4 6.13 15.16 7.64-1.95 5.66-4.34 11.2-7.18 16.63z"/></svg>
-                        Sign in with Apple
-                    </a>
-                    <a href="?login=facebook" target="_self" class="social-login-btn">
-                        <svg viewBox="0 0 24 24"><path fill="#1877F2" d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
-                        Sign in with Facebook
-                    </a>
-                    <a href="?login=linkedin" target="_self" class="social-login-btn">
-                        <svg viewBox="0 0 24 24"><path fill="#0A66C2" d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/></svg>
-                        Sign in with LinkedIn
-                    </a>
-                </div>
-            """, unsafe_allow_html=True)
+            with auth_tab_in:
+                with st.form(key=f"signin_form_{rc}"):
+                    si_email = st.text_input("Email", key=f"si_email_{rc}")
+                    si_password = st.text_input("Password", type="password", key=f"si_pass_{rc}")
+                    si_submit = st.form_submit_button("Sign In", type="primary")
+                    
+                    if si_submit:
+                        if not si_email or not si_password:
+                            st.error("Please fill in both email and password.")
+                        else:
+                            try:
+                                response = supabase.auth.sign_in_with_password({
+                                    "email": si_email,
+                                    "password": si_password
+                                })
+                                st.session_state.logged_in = True
+                                st.session_state.user_email = si_email
+                                st.success("Successfully signed in!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Sign-in failed: {e}")
+            
+            with auth_tab_up:
+                with st.form(key=f"signup_form_{rc}"):
+                    su_email = st.text_input("Email", key=f"su_email_{rc}")
+                    su_password = st.text_input("Password (min 6 chars)", type="password", key=f"su_pass_{rc}")
+                    su_submit = st.form_submit_button("Create Account", type="secondary")
+                    
+                    if su_submit:
+                        if not su_email or len(su_password) < 6:
+                            st.error("Please enter a valid email and a password of at least 6 characters.")
+                        else:
+                            try:
+                                response = supabase.auth.sign_up({
+                                    "email": su_email,
+                                    "password": su_password
+                                })
+                                st.success("Account created successfully! You can now sign in.")
+                            except Exception as e:
+                                st.error(f"Sign-up failed: {e}")
 
 # ==========================================
 # SIDEBAR SETUP (Strict Sequence with Separators)
@@ -183,7 +172,7 @@ reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
     type=list(supported_exts),
     key=f"global_ref_file_{rc}",
-    max_upload_size=5,  # 5MB limit for reference file
+    max_upload_size=5,
     help="Upload the assignment prompt or reference file once (Max 5MB). It will be applied across analysis modes!"
 )
 
@@ -192,7 +181,7 @@ st.sidebar.markdown("---")
 # 5. Reset Button
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
     st.session_state.reset_count_beta += 1
-    keys_to_clear = [k for k in list(st.session_state.keys()) if k not in ["reset_count_beta", "logged_in", "user_provider", "saved_reports"]]
+    keys_to_clear = [k for k in list(st.session_state.keys()) if k not in ["reset_count_beta", "logged_in", "user_email", "saved_reports"]]
     for key in keys_to_clear:
         del st.session_state[key]
     st.rerun()
@@ -236,12 +225,13 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 if extracted:
                     text += extracted + " "
             
-            # OCR Fallback for scanned/handwritten PDFs with missing text layers
-            if len(text.strip()) < 30:
+            if len(text.strip()) < 15:
                 images = convert_from_bytes(file_bytes)
                 ocr_text = ""
                 for img in images:
-                    ocr_text += pytesseract.image_to_string(img, lang='hin+eng') + " "
+                    img_gray = img.convert('L')
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    ocr_text += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + " "
                 if len(ocr_text.strip()) > len(text.strip()):
                     text = ocr_text
 
@@ -268,11 +258,8 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 text += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " "
                 
         elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp')):
-            image = Image.open(io.BytesIO(file_bytes)).convert('L') # Convert to grayscale
-            # Increase contrast to make handwritten strokes pop against paper background
-            from PIL import ImageEnhance
-            enhancer = ImageEnhance.Contrast(image)
-            image = enhancer.enhance(2.0)
+            image = Image.open(io.BytesIO(file_bytes)).convert('L')
+            image = ImageEnhance.Contrast(image).enhance(2.0)
             text = pytesseract.image_to_string(image, lang='hin+eng')
             
     except Exception as e:
@@ -329,7 +316,6 @@ if app_mode == "Plagiarism Checker":
             key=f"folder_zip_file_{rc}"
         )
 
-    # Process files based on upload selection
     processed_files = []
     if upload_choice == "Individual Files" and raw_uploaded_files:
         processed_files = raw_uploaded_files
@@ -375,16 +361,16 @@ if app_mode == "Plagiarism Checker":
                 total_to_process = len(processed_files)
                 
                 for idx, file in enumerate(processed_files):
-                    status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active if scanned)")
+                    status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active)")
                     progress_bar.progress(10 + int(60 * (idx + 1) / total_to_process))
                     
                     file.seek(0)
                     txt = extract_text_from_file_obj(file, file.name.lower())
-                    if txt.strip():
+                    if len(txt.strip()) >= 3:
                         if global_reference_text.strip():
                             prompt_words = set(global_reference_text.split())
                             cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
-                            if len(cleaned_txt.strip()) > 50:
+                            if len(cleaned_txt.strip()) > 10:
                                 txt = cleaned_txt
                         
                         documents.append(txt)
@@ -393,7 +379,7 @@ if app_mode == "Plagiarism Checker":
                 if len(documents) < 2:
                     progress_bar.empty()
                     status_text.empty()
-                    st.error("Not enough valid text found in the uploaded documents.")
+                    st.error("Not enough valid text found in the uploaded documents. (Try ensuring images are clear and well-lit).")
                 else:
                     status_text.text("Calculating similarity matrix across documents...")
                     progress_bar.progress(85)
@@ -434,7 +420,6 @@ if app_mode == "Plagiarism Checker":
                     st.session_state.analysis_type_run = analysis_mode_label
                     st.session_state.beta_course = course_assignment_name.strip() or "General Assignment"
 
-                    # Save report if logged in and toggle is active
                     if st.session_state.logged_in and save_reports_toggle:
                         st.session_state.saved_reports.append({
                             "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -449,7 +434,6 @@ if app_mode == "Plagiarism Checker":
                     status_text.empty()
                     st.rerun()
 
-    # Render results if they exist in session state
     if st.session_state.get("folder_analyzed", False):
         df = st.session_state.folder_df
         similarity_matrix = st.session_state.folder_similarity_matrix
@@ -548,7 +532,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         s = sentence.strip()
         if re.fullmatch(r'\d+\.?', s):
             return False
-        if len(s.split()) < 4:
+        if len(s.split()) < 2:
             return False
         return True
 
@@ -566,12 +550,14 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted:
                     full_text_pdf += extracted + "\n\n"
-            if len(full_text_pdf.strip()) < 30:
+            if len(full_text_pdf.strip()) < 15:
                 with open(file_path, "rb") as f:
                     pdf_bytes = f.read()
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
-                    full_text_pdf += pytesseract.image_to_string(img, lang='hin+eng') + "\n\n"
+                    img_gray = img.convert('L')
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -591,7 +577,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
-            image = Image.open(file_path)
+            image = Image.open(file_path).convert('L')
+            image = ImageEnhance.Contrast(image).enhance(2.0)
             full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
@@ -631,12 +618,14 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 extracted = page.extract_text()
                 if extracted:
                     full_text_pdf += extracted + "\n\n"
-            if len(full_text_pdf.strip()) < 30:
+            if len(full_text_pdf.strip()) < 15:
                 with open(file_path, "rb") as f:
                     pdf_bytes = f.read()
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
-                    full_text_pdf += pytesseract.image_to_string(img, lang='hin+eng') + "\n\n"
+                    img_gray = img.convert('L')
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -656,7 +645,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
-            image = Image.open(file_path)
+            image = Image.open(file_path).convert('L')
+            image = ImageEnhance.Contrast(image).enhance(2.0)
             full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
@@ -668,7 +658,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
             
             sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
-            if len(sentences) >= 2 and len(cleaned_block.split()) >= 8:
+            if len(sentences) >= 1 and len(cleaned_block.split()) >= 4:
                 valid_paragraphs.append(cleaned_block)
         return valid_paragraphs
 
@@ -843,11 +833,10 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 if os.path.exists(path2):
                     os.unlink(path2)
 
-    # Render deep dive results if they exist in session state
     if st.session_state.get("deep_result_type") == "empty_sentences":
         st.info("Found 0 matching sentences/lines.")
     elif st.session_state.get("deep_result_type") == "empty_paras":
-        st.info("Found 0 matching paragraphs (with at least 2 sentences).")
+        st.info("Found 0 matching paragraphs.")
     elif st.session_state.get("deep_result_type") == "paraphrased_matches":
         pairs = st.session_state.deep_para_pairs
         if not pairs:
@@ -912,7 +901,7 @@ elif app_mode == "📁 Report History Dashboard":
     st.write("Review, inspect, and access previously generated reports within your active retention window.")
     
     if not st.session_state.logged_in:
-        st.warning("🔒 Please sign in using the top-right **Sign In** button to view and manage your saved report history.")
+        st.warning("🔒 Please sign in using the top-right **Account Login** button to view and manage your saved report history.")
     else:
         if not st.session_state.saved_reports:
             st.info("No reports saved yet. Run a Plagiarism Analysis with 'Save Generated Reports' enabled to populate your history.")
@@ -971,7 +960,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
         "* **Proportionate Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) with native scrollbars and zoom tools.\n"
         "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection.\n"
-        "* **Beta Feature - Identity Provider Simulator:** Experiment with mock Google, Microsoft, Apple, Facebook, and LinkedIn sign-ins.\n"
+        "* **Beta Feature - Real Supabase Authentication:** Secure user sign-in and sign-up using Supabase backend accounts.\n"
         "* **Beta Feature - Report History Dashboard:** Store reports temporarily in session state with configurable retention windows (1 day to 1 month)."
     )
 
