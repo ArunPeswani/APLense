@@ -47,7 +47,6 @@ rc = st.session_state.reset_count
 # SIDEBAR SETUP (Strict Sequence with Separators)
 # ==========================================
 
-# 1. Navigation Radio Buttons
 app_mode = st.sidebar.radio(
     "Navigation", 
     ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], 
@@ -56,7 +55,6 @@ app_mode = st.sidebar.radio(
 
 st.sidebar.markdown("---")
 
-# 2. Analysis Settings (Sliders & Threshold Warning)
 st.sidebar.subheader("Analysis Settings")
 min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key=f"min_words_{rc}")
 max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key=f"max_words_{rc}")
@@ -64,7 +62,6 @@ similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_valu
 
 st.sidebar.markdown("---")
 
-# 3. Global Smart Filtering
 supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif", "heic", "heif", "webp")
 
 st.sidebar.subheader("Global Smart Filtering")
@@ -72,13 +69,12 @@ reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
     type=list(supported_exts),
     key=f"global_ref_file_{rc}",
-    max_upload_size=5,  # 5MB limit for reference file
+    max_upload_size=5,
     help="Upload the assignment prompt or reference file once (Max 5MB). It will be applied across analysis modes!"
 )
 
 st.sidebar.markdown("---")
 
-# 4. Reset Button
 if st.sidebar.button("🔄 Reset Everything", type="secondary"):
     st.session_state.reset_count += 1
     keys_to_clear = [k for k in list(st.session_state.keys()) if k != "reset_count"]
@@ -88,7 +84,6 @@ if st.sidebar.button("🔄 Reset Everything", type="secondary"):
 
 st.sidebar.markdown("---")
 
-# 5. Data Privacy & Security (Full Verbatim Text)
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
         "**Are my files secure?**\n\n"
@@ -113,7 +108,6 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "use, making it safe and secure for checking sensitive submissions!"
     )
 
-# Helper function to extract text with enhanced preprocessing and relaxed OCR acceptance
 def extract_text_from_file_obj(file_obj, filename_lower):
     text = ""
     file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
@@ -125,7 +119,6 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 if extracted:
                     text += extracted + " "
             
-            # OCR Fallback for scanned/handwritten PDFs
             if len(text.strip()) < 15:
                 images = convert_from_bytes(file_bytes)
                 ocr_text = ""
@@ -159,7 +152,6 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 text += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " "
                 
         elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp')):
-            # Direct image preprocessing for handwritten scans
             image = Image.open(io.BytesIO(file_bytes)).convert('L')
             image = ImageEnhance.Contrast(image).enhance(2.0)
             text = pytesseract.image_to_string(image, lang='hin+eng')
@@ -168,7 +160,6 @@ def extract_text_from_file_obj(file_obj, filename_lower):
         pass
     return text
 
-# Extract global reference text if uploaded
 global_reference_text = ""
 if reference_file:
     reference_file.seek(0)
@@ -218,7 +209,6 @@ if app_mode == "Plagiarism Checker":
             key=f"folder_zip_file_{rc}"
         )
 
-    # Process files based on upload selection
     processed_files = []
     if upload_choice == "Individual Files" and raw_uploaded_files:
         processed_files = raw_uploaded_files
@@ -269,7 +259,6 @@ if app_mode == "Plagiarism Checker":
                     
                     file.seek(0)
                     txt = extract_text_from_file_obj(file, file.name.lower())
-                    # Relaxed validation: accept if text has at least 3 characters
                     if len(txt.strip()) >= 3:
                         if global_reference_text.strip():
                             prompt_words = set(global_reference_text.split())
@@ -278,7 +267,8 @@ if app_mode == "Plagiarism Checker":
                                 txt = cleaned_txt
                         
                         documents.append(txt)
-                        filenames.append(file.name)
+                        unique_name = f"{idx+1}. {file.name}"
+                        filenames.append(unique_name)
                 
                 if len(documents) < 2:
                     progress_bar.empty()
@@ -328,7 +318,6 @@ if app_mode == "Plagiarism Checker":
                     status_text.empty()
                     st.rerun()
 
-    # Render results if they exist in session state
     if st.session_state.get("folder_analyzed", False):
         df = st.session_state.folder_df
         similarity_matrix = st.session_state.folder_similarity_matrix
@@ -363,8 +352,8 @@ if app_mode == "Plagiarism Checker":
         st.subheader(f"Visual Heatmap ({run_label})")
         st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
         
-        truncated_names = [name if len(name) <= 20 else name[:17] + "..." for name in filenames]
-        chart_dimension = max(900, total_files * 25)
+        truncated_names = [name if len(name) <= 25 else name[:22] + "..." for name in filenames]
+        chart_dimension = max(900, total_files * 35)
         
         fig = go.Figure(data=go.Heatmap(
             z=similarity_matrix,
@@ -379,9 +368,9 @@ if app_mode == "Plagiarism Checker":
         fig.update_layout(
             width=chart_dimension,
             height=chart_dimension,
-            margin=dict(l=150, r=50, t=50, b=150),
-            xaxis=dict(tickangle=-45),
-            yaxis=dict(autorange='reversed')
+            margin=dict(l=180, r=50, t=50, b=180),
+            xaxis=dict(tickangle=-45, type='category'),
+            yaxis=dict(autorange='reversed', type='category')
         )
         
         st.plotly_chart(fig, use_container_width=False)
@@ -427,7 +416,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         s = sentence.strip()
         if re.fullmatch(r'\d+\.?', s):
             return False
-        if len(s.split()) < 2: # Relaxed word limit for handwriting lines
+        if len(s.split()) < 2:
             return False
         return True
 
@@ -728,7 +717,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 if os.path.exists(path2):
                     os.unlink(path2)
 
-    # Render deep dive results if they exist in session state
     if st.session_state.get("deep_result_type") == "empty_sentences":
         st.info("Found 0 matching sentences/lines.")
     elif st.session_state.get("deep_result_type") == "empty_paras":
@@ -789,9 +777,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
     if not file1 or not file2:
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
-# ==========================================
-# MODE 4: USER GUIDE & HELP
-# ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
     st.write("Welcome to APLens! This comprehensive guide explains all tools, analysis modes, and features available in the suite.")
