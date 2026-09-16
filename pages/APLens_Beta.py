@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_title="APLens Beta - Google Avatar Menu", page_icon="🧪", layout="centered")
+st.set_page_config(page_title="APLens Beta - Google Profile Avatar", page_icon="🧪", layout="centered")
 
 # --- SAFE USER DATA EXTRACTION ---
 user_email = getattr(st.user, "email", "User") if st.user.is_logged_in else ""
@@ -10,35 +10,38 @@ user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", No
 if not user_avatar:
     user_avatar = "https://www.w3schools.com/howto/img_avatar.png"
 
-# --- CUSTOM CSS FOR CIRCULAR AVATAR POPOVER TOGGLE ---
+# --- REFINED CSS TO FORCE PROFILE IMAGE ON THE POPOVER BUTTON ---
 if st.user.is_logged_in:
     st.markdown(f"""
         <style>
-            /* Style the popover toggle button to display the circular profile image */
-            [data-testid="stPopover"] > button {{
-                border-radius: 50% !important;
-                width: 44px !important;
-                height: 44px !important;
-                padding: 0px !important;
+            /* Target the popover button and enforce the Google profile picture background */
+            div[data-testid="stPopover"] > button {{
                 background-image: url("{user_avatar}") !important;
                 background-size: cover !important;
                 background-position: center !important;
+                border-radius: 50% !important;
+                width: 42px !important;
+                height: 42px !important;
                 border: 2px solid #dadce0 !important;
-                float: right;
                 box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                padding: 0px !important;
+                text-indent: -9999px !important;
+                overflow: hidden !important;
             }}
-            [data-testid="stPopover"] > button:hover {{
+            div[data-testid="stPopover"] > button:hover {{
                 border-color: #1a73e8 !important;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.15);
             }}
-            /* Hide Streamlit's default arrow/text inside the popover button */
-            [data-testid="stPopover"] > button * {{
+            /* Hide Streamlit's default arrow icon and text wrappers */
+            div[data-testid="stPopover"] > button svg,
+            div[data-testid="stPopover"] > button span,
+            div[data-testid="stPopover"] > button p {{
                 display: none !important;
             }}
         </style>
     """, unsafe_allow_html=True)
 
-# --- TOP HEADER & PROFILE DROPDOWN BAR ---
+# --- TOP HEADER & PROFILE MENU BAR ---
 header_col1, header_col2 = st.columns([0.7, 0.3])
 
 with header_col1:
