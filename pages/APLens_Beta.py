@@ -350,7 +350,6 @@ if app_mode == "Plagiarism Checker":
     global_reference_text = ""
     if reference_file:
         global_reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
-        # Save or update instructions in SQLite vault for this LMS & Assignment
         try:
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
@@ -365,7 +364,6 @@ if app_mode == "Plagiarism Checker":
         except Exception:
             pass
     else:
-        # Check if instructions are already saved in vault for this LMS & Assignment
         try:
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
@@ -689,7 +687,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
     st.header("Deep Dive Matcher")
     st.write("Compare two specific documents or spreadsheets sheet-by-sheet to extract exact matching sentences or true paragraphs.")
     
-    # Global ref text fallback for deep dive as well
     global_ref_deep = ""
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -954,30 +951,51 @@ elif app_mode == "📁 Report History Dashboard":
                 st.warning(f"Could not load deep dive logs: {ex}")
 
 # ==========================================
-# MODE 5: USER GUIDE & HELP
+# MODE 5: USER GUIDE & HELP (DETAILED FOR GRADERS)
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
-    st.header("💡 User Guide & Help Center")
-    st.write("Welcome to APLens! This comprehensive guide explains all tools, analysis modes, and features available in the suite.")
+    st.header("💡 Grader Guide & Help Center")
+    st.write("Welcome to the APLens Beta Suite. This comprehensive guide is designed for graders to help you navigate login security, cumulative late submissions, smart syllabus filtering, and report tracking.")
 
     st.markdown("---")
 
-    st.subheader("1. What is APLens & What Does It Do?")
+    st.subheader("1. Gated Google Authentication")
     st.write(
-        "APLens is a specialized peer-to-peer plagiarism detection and document comparison web suite designed "
-        "for educators, instructors, and researchers."
+        "* **Secure Access:** When you first open the APLens Beta page, you will encounter a login gate requiring you to sign in with your official Google account.\n"
+        "* **Why it matters:** This ensures that all grading activity, file scan counts, and comparison reports are securely logged and tied to your grader identity."
     )
 
-    st.subheader("2. How It Works & Key Features")
+    st.subheader("2. Setting Up LMS Number & Assignment Name")
     st.write(
-        "APLens offers multiple advanced analysis modes and features:\n\n"
-        "* **Gated Google Login:** Users must authenticate via Google before accessing any tools.\n"
-        "* **Cumulative Document Vault & Persistent Syllabus:** Automatically indexes student submissions and assignment instructions/syllabus by LMS Number and Assignment Name in local SQLite, ensuring late submissions and future runs automatically reuse reference instructions and check against past papers.\n"
-        "* **Local SQLite Audit Logging:** Automatically stores user emails, names, timestamps, settings used, files scanned, and similarity summaries locally.\n"
-        "* **Deep Dive >50% Match Tracking:** Captures sentence-level pairs sharing 50% or more similarity."
+        "Before uploading student submissions in the **Plagiarism Checker**, you will see two side-by-side input boxes at the top:\n"
+        "* **LMS Number:** Enter your course or LMS identifier (e.g., `48921`). Past LMS numbers will be remembered and displayed below the inputs for quick reference.\n"
+        "* **Assignment Name:** Enter the specific assignment title (e.g., `Assignment A`, `Assignment B`).\n"
+        "* **Why this structure matters:** This ensures that submissions are cleanly isolated. If you grade *Assignment B* under the same LMS number next month, the app won't mix up files from *Assignment A*."
     )
 
-    st.subheader("3. Support, Contact & Feedback")
+    st.subheader("3. Handling Staggered & Late Submissions (Cumulative Vault)")
     st.write(
-        "If you encounter any issues or require assistance, please contact **Arun Peswani**. Your feedback is always warmly welcomed!"
+        "Graders often check initial submissions before the due date, followed by trickle-in submissions as students submit late. APLens handles this seamlessly via a local database vault:\n"
+        "* **First Batch Run:** When you grade your initial submissions (e.g., 10 files) and run the analysis, the app checks them against each other and automatically saves their extracted text into the secure vault for that specific LMS number and assignment.\n"
+        "* **Later Batches (Late Submissions):** When you receive subsequent submissions (e.g., 40 new files or trickle-in papers), enter the **exact same LMS Number and Assignment Name** and upload the new files.\n"
+        "* **Automatic Cross-Checking:** The app will automatically fetch the past submissions out of the vault, compare the new batch against those historical papers, and then add the new papers into the vault so they are included in all future runs!"
+    )
+
+    st.subheader("4. Persistent Assignment Instructions & Syllabus Filtering")
+    st.write(
+        "* **Avoiding False Positives:** Student papers often contain shared boilerplate text from the assignment prompt or syllabus.\n"
+        "* **How to use it:** Upload your instruction file in the sidebar under **Global Smart Filtering** during *any* run (first batch or later).\n"
+        "* **Permanent Storage:** APLens will automatically save those instructions to the database for that LMS number and assignment.\n"
+        "* **Auto-Loading:** In future runs or when grading late submissions, you do not need to re-upload the instructions file. The app will automatically detect your LMS/Assignment combination and pull the saved instructions out of the vault to strip out boilerplate text automatically."
+    )
+
+    st.subheader("5. Deep Dive Matcher & Report History Dashboard")
+    st.write(
+        "* **Deep Dive Matcher:** Compare two specific documents side-by-side sheet-by-sheet (for Excel workbooks) or sentence-by-sentence to extract exact matching instances sharing 50% or more similarity.\n"
+        "* **Report History Dashboard:** Review your previously generated similarity reports. If you are logged in as the administrator (`arunpeswani@gmail.com`), you will also have access to the **User Activity Log** and **Deep Dive Log** tabs with instant CSV download buttons and a **Fetch Reports** refresh button."
+    )
+
+    st.subheader("6. Support & Contact")
+    st.write(
+        "If you encounter technical issues, database errors, or need assistance with batch archives, please contact **Arun Peswani**. Your feedback helps make APLens better for the grading team!"
     )
