@@ -749,7 +749,7 @@ elif app_mode == "📁 Report History Dashboard":
         # Add a refresh button for the admin
         col_h1, col_h2 = st.columns([0.8, 0.2])
         with col_h2:
-            if st.button("🔄 Fetch Latest Reports", type="secondary", key=f"fetch_reports_btn_{rc}"):
+            if st.button("Fetch Latest Reports", type="secondary", key=f"fetch_reports_btn_{rc}"):
                 st.rerun()
                 
         tab_my_reports, tab_audit_log, tab_deep_log = st.tabs(["My Saved Reports", "📊 User Activity & Settings Log", "🔍 Deep Dive (>50%) Log"])
