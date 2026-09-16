@@ -1,32 +1,46 @@
 import streamlit as st
 
-st.set_page_config(page_title="APLens Beta - Google Avatar Auth", page_icon="🧪", layout="centered")
+st.set_page_config(page_title="APLens Beta - Google Profile Avatar", page_icon="🧪", layout="centered")
 
-# --- CUSTOM CSS FOR ROUND AVATAR POPOVER ---
-st.markdown("""
-    <style>
-        /* Style the popover button to look like a clean profile container */
-        [data-testid="stPopover"] > button {
-            border-radius: 50% !important;
-            width: 42px !important;
-            height: 42px !important;
-            padding: 0px !important;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 2px solid #dadce0;
-            background-color: #f8f9fa;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            float: right;
-        }
-        [data-testid="stPopover"] > button:hover {
-            border-color: #1a73e8;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.15);
-        }
-    </style>
-""", unsafe_allow_html=True)
+# --- SAFE USER DATA EXTRACTION ---
+user_email = getattr(st.user, "email", "User") if st.user.is_logged_in else ""
+user_name = getattr(st.user, "name", "Google User") if st.user.is_logged_in else ""
+user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", None)) if st.user.is_logged_in else ""
 
-# --- TOP HEADER & GOOGLE-STYLE AVATAR BAR ---
+if not user_avatar:
+    user_avatar = "https://www.w3schools.com/howto/img_avatar.png"
+
+# --- CUSTOM CSS TO INJECT PROFILE IMAGE INTO THE POPOVER BUTTON ---
+if st.user.is_logged_in:
+    st.markdown(f"""
+        <style>
+            /* Target Streamlit's popover button and replace it with your Google profile image */
+            [data-testid="stPopover"] > button {{
+                border-radius: 50% !important;
+                width: 42px !important;
+                height: 42px !important;
+                padding: 0px !important;
+                background-image: url("{user_avatar}") !important;
+                background-size: cover !important;
+                background-position: center !important;
+                border: 2px solid #dadce0 !important;
+                color: transparent !important; /* Hides default chevron/text */
+                float: right;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }}
+            [data-testid="stPopover"] > button:hover {{
+                border-color: #1a73e8 !important;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+            }}
+            /* Hide any remaining inner text or icons inside the button */
+            [data-testid="stPopover"] > button p, 
+            [data-testid="stPopover"] > button svg {{
+                display: none !important;
+            }}
+        </style>
+    """, unsafe_allow_html=True)
+
+# --- TOP HEADER & PROFILE MENU BAR ---
 header_col1, header_col2 = st.columns([0.7, 0.3])
 
 with header_col1:
@@ -34,20 +48,8 @@ with header_col1:
 
 with header_col2:
     if st.user.is_logged_in:
-        # Extract user profile image and email safely from native session
-        user_email = getattr(st.user, "email", "User")
-        user_name = getattr(st.user, "name", "Google User")
-        
-        # Google OIDC profile image attribute can be 'picture' or 'image'
-        user_avatar = getattr(st.user, "picture", None) or getattr(st.user, "image", None)
-        
-        # Fallback to a clean default user icon if avatar URL isn't present
-        if not user_avatar:
-            user_avatar = "https://www.w3schools.com/howto/img_avatar.png"
-
-        # Render a Google-style Account Menu Popover
+        # Render the Google-style Account Menu Dropover
         with st.popover(""):
-            # Custom HTML to display avatar and email inside the dropdown card
             st.markdown(f"""
                 <div style="text-align: center; padding: 10px 0px;">
                     <img src="{user_avatar}" style="width: 64px; height: 64px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover; margin-bottom: 8px;">
@@ -73,7 +75,7 @@ st.markdown("---")
 # --- MAIN PAGE CONTENT ---
 if st.user.is_logged_in:
     st.success(f"Successfully logged in as: **{st.user.email}**")
-    st.write(f"Welcome, {getattr(st.user, 'name', 'User')}! Your Google profile image and native authentication session are active.")
+    st.write(f"Welcome, {user_name}! Your Google profile image avatar and native session are fully active.")
     
     st.info("You have full access to the Beta suite features.")
 else:
