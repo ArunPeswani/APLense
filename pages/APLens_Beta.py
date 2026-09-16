@@ -22,7 +22,7 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
 
-# --- COMPACT SIDEBAR CSS & ISOLATED GOOGLE LOGIN BUTTON STYLING ---
+# --- COMPACT SIDEBAR CSS & ISOLATED GOOGLE SIGN-IN BUTTON STYLING ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -36,27 +36,34 @@ st.markdown("""
             text-align: center;
         }
         
-        /* Apply official pill styling and Google logo ONLY to buttons inside the google-signin-container */
-        div.google-signin-container div.stButton > button {
-            border-radius: 24px !important;
-            border: 1px solid #dadce0 !important;
-            background-color: #ffffff !important;
+        /* Official Google Sign-In Button Styling */
+        .google-login-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background-color: #ffffff;
             color: #3c4043 !important;
-            font-family: 'Roboto', sans-serif !important;
-            font-weight: 500 !important;
-            font-size: 14px !important;
-            padding: 8px 20px 8px 48px !important;
-            background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 48 48"><path fill="%23EA4335" d="M24 9.5c3.54 0 6.7 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="%234285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="%23FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="%2334A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>') !important;
-            background-repeat: no-repeat !important;
-            background-position: 16px center !important;
+            border: 1px solid #dadce0;
+            border-radius: 24px;
+            font-family: 'Roboto', sans-serif;
+            font-weight: 500;
+            font-size: 14px;
+            padding: 8px 22px;
+            text-decoration: none !important;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s;
             float: right;
         }
-        div.google-signin-container div.stButton > button:hover {
-            background-color: #f8f9fa !important;
-            border-color: #dadce0 !important;
+        .google-login-btn:hover {
+            background-color: #f8f9fa;
+            border-color: #dadce0;
             box-shadow: 0 1px 3px rgba(60,64,67,0.2);
             color: #202124 !important;
+        }
+        .google-login-btn svg {
+            width: 18px;
+            height: 18px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -114,11 +121,24 @@ with header_col2:
                 if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_btn_{rc}"):
                     st.logout()
     else:
-        # Logged Out State: Wrapped inside a custom div container to isolate Google button styles
-        st.markdown('<div class="google-signin-container">', unsafe_allow_html=True)
-        if st.button("Sign in with Google", key=f"google_login_btn_{rc}"):
-            st.login("google")
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Logged Out State: Pure HTML/CSS Google Button invoking Streamlit's login action
+        st.markdown("""
+            <div style="text-align: right; padding-top: 8px;">
+                <a href="?action=login" target="_self" class="google-login-btn">
+                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.7 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                    </svg>
+                    Sign in with Google
+                </a>
+            </div>
+        """, unsafe_allow_html=True)
+
+# Handle native authentication action trigger if clicked
+if "action" in st.query_params and st.query_params["action"] == "login":
+    st.login("google")
 
 # ==========================================
 # SIDEBAR SETUP
