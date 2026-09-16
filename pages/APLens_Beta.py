@@ -97,39 +97,38 @@ if "saved_reports" not in st.session_state:
 
 rc = st.session_state.reset_count_beta
 
-# --- HANDLE OAUTH TOKENS & HASH FRAGMENTS ---
+# --- HANDLE OAUTH TOKENS VIA FRONTEND JAVASCRIPT & SUPABASE ---
 st.markdown("""
     <script>
-        if (window.location.hash && window.location.hash.includes('access_token')) {
-            const hashParams = new URLSearchParams(window.location.hash.substring(1));
-            const accessToken = hashParams.get('access_token');
-            if (accessToken) {
-                const newUrl = window.location.pathname + '?access_token=' + accessToken;
-                window.location.replace(newUrl);
+        async function handleOAuth() {
+            if (window.location.hash && window.location.hash.includes('access_token')) {
+                const hashParams = new URLSearchParams(window.location.hash.substring(1));
+                const accessToken = hashParams.get('access_token');
+                if (accessToken) {
+                    window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+                    window.location.search = '?access_token=' + accessToken;
+                }
             }
         }
+        handleOAuth();
     </script>
 """, unsafe_allow_html=True)
 
-# Handle OAuth redirect tokens & user session persistence
+# Handle incoming query parameters after token capture
 query_params = st.query_params
-
-if "access_token" in query_params or "code" in query_params or any(k.startswith("access_token") for k in query_params):
+if "access_token" in query_params:
+    token = query_params["access_token"]
     try:
-        session = supabase.auth.get_session()
-        if session and session.user:
+        user_resp = supabase.auth.get_user(token)
+        if user_resp and user_resp.user:
             st.session_state.logged_in = True
-            st.session_state.user_email = session.user.email
-        else:
-            st.session_state.logged_in = True
-            st.session_state.user_email = "Authenticated User"
-        st.query_params.clear()
-        st.rerun()
+            st.session_state.user_email = user_resp.user.email
+            st.query_params.clear()
+            st.rerun()
     except Exception:
-        st.session_state.logged_in = True
-        st.session_state.user_email = "Authenticated User"
-        st.query_params.clear()
+        pass
 
+# Fallback session check
 if not st.session_state.logged_in:
     try:
         current_session = supabase.auth.get_session()
