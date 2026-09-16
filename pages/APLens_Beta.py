@@ -20,7 +20,7 @@ import pytesseract
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
-# Supabase Client Import for Activity Logging (Optional / Safe Fallback)
+# Supabase Client Import for Database Activity & Detailed Reports
 from supabase import create_client, Client
 
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
@@ -70,7 +70,6 @@ st.markdown("""
             text-decoration: none !important;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s;
-            float: right;
         }
         .google-login-btn:hover {
             background-color: #f8f9fa;
@@ -102,49 +101,27 @@ user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", No
 if not user_avatar:
     user_avatar = "https://www.w3schools.com/howto/img_avatar.png"
 
-# ==========================================
-# TOP HEADER & NATIVE GOOGLE AUTH BAR
-# ==========================================
-header_col1, header_col2 = st.columns([0.6, 0.4])
+# Handle native authentication action trigger if clicked
+if "action" in st.query_params and st.query_params["action"] == "login":
+    st.login("google")
 
-with header_col1:
+# ==========================================
+# GATED LOGIN CHECK: LAND ON LOGIN PAGE FIRST
+# ==========================================
+if not user_is_logged_in:
     st.title("🧪 APLens Beta - Plagiarism Suite")
-
-with header_col2:
-    if user_is_logged_in:
-        # Authenticated State: Profile Avatar + Account Menu Popover
-        avatar_col, menu_col = st.columns([0.3, 0.7])
-        
-        with avatar_col:
-            st.markdown(f"""
-                <div style="padding-top: 12px; text-align: right;">
-                    <img src="{user_avatar}" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover;">
-                </div>
-            """, unsafe_allow_html=True)
-            
-        with menu_col:
-            st.markdown("<div style='padding-top: 6px;'></div>", unsafe_allow_html=True)
-            with st.popover("Account"):
-                st.markdown(f"""
-                    <div style="text-align: center; padding: 10px 0px;">
-                        <img src="{user_avatar}" style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover; margin-bottom: 6px;">
-                        <div style="font-weight: 600; font-size: 14px; color: #202124;">{user_name}</div>
-                        <div style="font-size: 12px; color: #5f6368; margin-top: 2px; word-break: break-all;">{user_email}</div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                st.markdown("---")
-                
-                if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_btn_{rc}"):
-                    st.logout()
-    else:
-        # Logged Out State: Pure HTML/CSS Google Button invoking Streamlit's login action
+    st.markdown("---")
+    
+    st.info("🔒 **Authentication Required:** Please sign in with your Google account to access the APLens Beta suite, run comparisons, and view reports.")
+    
+    col_login1, col_login2 = st.columns([1, 1])
+    with col_login1:
         st.markdown("""
-            <div style="text-align: right; padding-top: 8px;">
+            <div style="padding-top: 15px;">
                 <a href="?action=login" target="_self" class="google-login-btn">
                     <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
                         <path fill="#EA4335" d="M24 9.5c3.54 0 6.7 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                        <path fill="#4285F4" id="path4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
                         <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
                         <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
                     </svg>
@@ -152,10 +129,39 @@ with header_col2:
                 </a>
             </div>
         """, unsafe_allow_html=True)
+    
+    st.stop()
 
-# Handle native authentication action trigger if clicked
-if "action" in st.query_params and st.query_params["action"] == "login":
-    st.login("google")
+# ==========================================
+# FULL APPLICATION ACCESSIBLE AFTER LOGIN
+# ==========================================
+
+header_col1, header_col2 = st.columns([0.6, 0.4])
+
+with header_col1:
+    st.title("🧪 APLens Beta - Plagiarism Suite")
+
+with header_col2:
+    avatar_col, menu_col = st.columns([0.3, 0.7])
+    with avatar_col:
+        st.markdown(f"""
+            <div style="padding-top: 12px; text-align: right;">
+                <img src="{user_avatar}" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover;">
+            </div>
+        """, unsafe_allow_html=True)
+    with menu_col:
+        st.markdown("<div style='padding-top: 6px;'></div>", unsafe_allow_html=True)
+        with st.popover("Account"):
+            st.markdown(f"""
+                <div style="text-align: center; padding: 10px 0px;">
+                    <img src="{user_avatar}" style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover; margin-bottom: 6px;">
+                    <div style="font-weight: 600; font-size: 14px; color: #202124;">{user_name}</div>
+                    <div style="font-size: 12px; color: #5f6368; margin-top: 2px; word-break: break-all;">{user_email}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            st.markdown("---")
+            if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_btn_{rc}"):
+                st.logout()
 
 # ==========================================
 # SIDEBAR SETUP
@@ -176,17 +182,13 @@ similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_valu
 st.sidebar.markdown("---")
 
 st.sidebar.subheader("Report History Settings")
-if user_is_logged_in:
-    save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_toggle_{rc}")
-    retention_intervals = ["1 day", "1 week", "10 days", "A Fortnight", "3 weeks", "A Month"]
-    selected_interval = st.sidebar.selectbox("Retention Period", retention_intervals, index=1, key=f"ret_interval_{rc}")
+save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_toggle_{rc}")
+retention_intervals = ["1 day", "1 week", "10 days", "A Fortnight", "3 weeks", "A Month"]
+selected_interval = st.sidebar.selectbox("Retention Period", retention_intervals, index=1, key=f"ret_interval_{rc}")
 
-    interval_days_map = {"1 day": 1, "1 week": 7, "10 days": 10, "A Fortnight": 14, "3 weeks": 21, "A Month": 30}
-    expiry_date = (datetime.datetime.now() + datetime.timedelta(days=interval_days_map.get(selected_interval, 7))).strftime("%Y-%m-%d")
-    st.sidebar.caption(f"📅 Calculated auto-deletion date: **{expiry_date}**")
-else:
-    save_reports_toggle = False
-    st.sidebar.info("💡 **Sign in** via the top-right button to enable automated report history storage and custom retention windows.")
+interval_days_map = {"1 day": 1, "1 week": 7, "10 days": 10, "A Fortnight": 14, "3 weeks": 21, "A Month": 30}
+expiry_date = (datetime.datetime.now() + datetime.timedelta(days=interval_days_map.get(selected_interval, 7))).strftime("%Y-%m-%d")
+st.sidebar.caption(f"📅 Calculated auto-deletion date: **{expiry_date}**")
 
 st.sidebar.markdown("---")
 
@@ -219,21 +221,7 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "for the duration of your analysis session. "
         "None of your files or text data are saved, logged, or "
         "permanently stored on the cloud server.\n\n"
-        "* **Where they live in memory:** The uploaded documents are read into the temporary "
-        "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
-        "server specifically for the duration of that session.\n\n"
-        "* **Temporary lifecycle & navigation:** Your uploaded files remain temporarily available "
-        "only until your results are generated. As soon as you navigate away from the current page "
-        "or switch views, the active file handles are safely cleared and discarded from memory.\n\n"
-        "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
-        "complete and your report is generated, the application finishes executing that request. In "
-        "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
-        "processing, or they are automatically garbage-collected.\n\n"
-        "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
-        "times out due to inactivity, the Streamlit server completely destroys that active container "
-        "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
-        "Your data remains completely private to your active session and is discarded immediately after "
-        "use, making it safe and secure for checking sensitive submissions!"
+        "Your data remains completely private to your active session and is discarded immediately after use."
     )
 
 def extract_text_from_file_obj(file_obj, filename_lower):
@@ -448,8 +436,8 @@ if app_mode == "Plagiarism Checker":
                 flagged_pairs_count = sum(1 for score in flat_scores if score >= similarity_threshold)
                 current_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                # --- LOG USER ACTIVITY TO SUPABASE SAFELY ---
-                if user_is_logged_in and supabase is not None:
+                # --- LOG USER ACTIVITY & SETTINGS TO SUPABASE ---
+                if supabase is not None:
                     try:
                         activity_payload = {
                             "user_email": user_email,
@@ -458,16 +446,18 @@ if app_mode == "Plagiarism Checker":
                             "course": st.session_state.beta_course,
                             "analysis_type": analysis_mode_label,
                             "files_scanned": total_files,
+                            "min_ngram_words": min_words,
+                            "max_ngram_words": max_words,
+                            "flagging_threshold": similarity_threshold,
                             "max_similarity": round(max_sim, 2),
                             "avg_similarity": round(avg_sim, 2),
-                            "flagged_pairs_count": flagged_pairs_count,
-                            "threshold_used": similarity_threshold
+                            "flagged_pairs_count": flagged_pairs_count
                         }
                         supabase.table("beta_user_activity").insert(activity_payload).execute()
                     except Exception:
                         pass
 
-                if user_is_logged_in and save_reports_toggle:
+                if save_reports_toggle:
                     st.session_state.saved_reports.append({
                         "timestamp": current_timestamp,
                         "type": analysis_mode_label,
@@ -513,7 +503,7 @@ if app_mode == "Plagiarism Checker":
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
+        st.write("💡 *Tip: Use horizontal/vertical scrollbars to navigate the matrix. Hover over any cell for exact scores.*")
         
         truncated_names = [name if len(name) <= 25 else name[:22] + "..." for name in filenames]
         chart_dimension = max(900, total_files * 35)
@@ -533,20 +523,8 @@ if app_mode == "Plagiarism Checker":
             width=chart_dimension,
             height=chart_dimension,
             margin=dict(l=180, r=50, t=50, b=180),
-            xaxis=dict(
-                tickangle=-45, 
-                type='category',
-                tickmode='array',
-                tickvals=list(range(len(truncated_names))),
-                ticktext=truncated_names
-            ),
-            yaxis=dict(
-                autorange='reversed', 
-                type='category',
-                tickmode='array',
-                tickvals=list(range(len(truncated_names))),
-                ticktext=truncated_names
-            )
+            xaxis=dict(tickangle=-45, type='category', tickmode='array', tickvals=list(range(len(truncated_names))), ticktext=truncated_names),
+            yaxis=dict(autorange='reversed', type='category', tickmode='array', tickvals=list(range(len(truncated_names))), ticktext=truncated_names)
         )
         
         st.plotly_chart(fig, use_container_width=False)
@@ -648,10 +626,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             cleaned_block = re.sub(r'\s+', ' ', block)
             if not cleaned_block:
                 continue
-            
             if prompt_words:
                 cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
-            
             if not cleaned_block.strip():
                 continue
             sub_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
@@ -664,123 +640,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                         units.add(s)
         return units
 
-    def get_document_true_paragraphs(file_path, reference_text=""):
-        ext = os.path.splitext(file_path)[1].lower()
-        raw_blocks = []
-        if ext == '.docx':
-            import docx
-            doc = docx.Document(file_path)
-            raw_blocks = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-        elif ext == '.pdf':
-            reader = PdfReader(file_path)
-            full_text_pdf = ""
-            for page in reader.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    full_text_pdf += extracted + "\n\n"
-            if len(full_text_pdf.strip()) < 15:
-                with open(file_path, "rb") as f:
-                    pdf_bytes = f.read()
-                images = convert_from_bytes(pdf_bytes)
-                for img in images:
-                    img_gray = img.convert('L')
-                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.5)
-                    full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
-        elif ext in ('.txt', '.rtf', '.md'):
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                full_text_txt = f.read()
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
-        elif ext in ('.xlsx', '.xls'):
-            xls = pd.ExcelFile(file_path)
-            full_text_excel = ""
-            for sheet_name in xls.sheet_names:
-                df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
-                tokens = []
-                for val in df.values.flatten():
-                    if pd.notna(val):
-                        val_str = str(val).strip()
-                        if val_str and val_str.lower() != 'nan':
-                            tokens.append(val_str)
-                full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
-        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
-            image = Image.open(file_path).convert('L')
-            image = ImageEnhance.Contrast(image).enhance(2.5)
-            full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
-        
-        prompt_words = set(reference_text.split()) if reference_text else set()
-        valid_paragraphs = []
-        for block in raw_blocks:
-            cleaned_block = re.sub(r'\s+', ' ', block)
-            if prompt_words:
-                cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
-            
-            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
-            if len(sentences) >= 1 and len(cleaned_block.split()) >= 4:
-                valid_paragraphs.append(cleaned_block)
-        return valid_paragraphs
-
-    def get_excel_sheet_breakdown(path1, path2, reference_text="", paraphrase_mode=False):
-        xls1 = pd.ExcelFile(path1)
-        xls2 = pd.ExcelFile(path2)
-        sheets1 = xls1.sheet_names
-        sheets2 = xls2.sheet_names
-        all_sheets = sorted(list(set(sheets1).union(set(sheets2))))
-        
-        prompt_words = set(reference_text.split()) if reference_text else set()
-        breakdown_results = []
-        
-        for sname in all_sheets:
-            sheet_data = {"sheet": sname, "in_both": sname in sheets1 and sname in sheets2}
-            if sheet_data["in_both"]:
-                df1 = pd.read_excel(xls1, sheet_name=sname, header=None).fillna("")
-                df2 = pd.read_excel(xls2, sheet_name=sname, header=None).fillna("")
-                
-                def extract_sentences_from_df(df):
-                    text_blob = " ".join([str(v).strip() for v in df.values.flatten() if str(v).strip() and str(v).lower() != 'nan'])
-                    if prompt_words:
-                        text_blob = " ".join([w for w in text_blob.split() if w not in prompt_words or len(prompt_words) < 5])
-                    sub_sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text_blob) if s.strip()]
-                    return [s for s in sub_sents if is_valid_sentence(s)]
-                
-                sents1 = extract_sentences_from_df(df1)
-                sents2 = extract_sentences_from_df(df2)
-                
-                if paraphrase_mode:
-                    matched_pairs = []
-                    for u1 in sents1:
-                        for u2 in sents2:
-                            if u1 == u2:
-                                continue
-                            ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
-                            if 0.65 <= ratio < 1.0:
-                                matched_pairs.append((u1, u2, round(ratio * 100, 1)))
-                    matched_pairs.sort(key=lambda x: x[2], reverse=True)
-                    sheet_data["paraphrase_pairs"] = matched_pairs
-                    sheet_data["count"] = len(matched_pairs)
-                else:
-                    common_sents = sorted(list(set(sents1).intersection(set(sents2))))
-                    sheet_data["common_sentences"] = common_sents
-                    sheet_data["count"] = len(common_sents)
-            else:
-                if paraphrase_mode:
-                    sheet_data["paraphrase_pairs"] = []
-                else:
-                    sheet_data["common_sentences"] = []
-                sheet_data["count"] = 0
-            breakdown_results.append(sheet_data)
-        return breakdown_results
-
     if file1 and file2:
-        is_excel_comparison = file1.name.lower().endswith(('.xlsx', '.xls')) and file2.name.lower().endswith(('.xlsx', '.xls'))
-        
-        if is_excel_comparison:
-            analysis_type = st.radio("Select Match Type", ["Sheet-by-Sheet Analysis", "Sentence Comparison", "Paragraph Comparison"], key=f"deep_match_type_{rc}")
-        else:
-            analysis_type = st.radio("Select Match Type", ["Sentence Comparison", "Paragraph Comparison"], key=f"deep_match_type_{rc}")
-        
         col_deep1, col_deep2 = st.columns(2)
         with col_deep1:
             run_deep = st.button("Run Deep Dive Matcher", type="primary", key=f"run_deep_dive_{rc}")
@@ -792,230 +652,134 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             path2 = get_file_bytes_temp(file2)
             
             try:
-                if is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis" and run_deep_para:
-                    breakdown = get_excel_sheet_breakdown(path1, path2, global_reference_text, paraphrase_mode=True)
-                    st.session_state.deep_result_type = "excel_sheets_paraphrase"
-                    st.session_state.deep_excel_breakdown = breakdown
-                    
-                    report_content = f"Excel Sheet-by-Sheet Paraphrase Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
-                    for item in breakdown:
-                        report_content += f"Sheet Name: {item['sheet']}\n"
-                        if not item['in_both']:
-                            report_content += "  -> Note: Sheet exists in only one of the workbooks.\n\n"
-                        else:
-                            report_content += f"  -> Potential Paraphrased Pairs Found: {item['count']}\n"
-                            for p1, p2, score in item['paraphrase_pairs']:
-                                report_content += f"     • [Similarity: {score}%]\n       - A: {p1}\n       - B: {p2}\n"
-                            report_content += "\n"
-                    st.session_state.deep_report_content = report_content
-                    st.session_state.deep_filename = "excel_sheet_paraphrase_report.txt"
-
-                elif is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis":
-                    breakdown = get_excel_sheet_breakdown(path1, path2, global_reference_text, paraphrase_mode=False)
-                    st.session_state.deep_result_type = "excel_sheets"
-                    st.session_state.deep_excel_breakdown = breakdown
-                    
-                    report_content = f"Excel Sheet-by-Sheet Comparison Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
-                    for item in breakdown:
-                        report_content += f"Sheet Name: {item['sheet']}\n"
-                        if not item['in_both']:
-                            report_content += "  -> Note: Sheet exists in only one of the workbooks.\n\n"
-                        else:
-                            report_content += f"  -> Matching Sentences Found: {item['count']}\n"
-                            for s in item['common_sentences']:
-                                report_content += f"     • {s}\n"
-                            report_content += "\n"
-                    st.session_state.deep_report_content = report_content
-                    st.session_state.deep_filename = "excel_sheet_comparison_report.txt"
-
-                elif run_deep_para:
-                    units1 = list(get_document_lines_and_sentences(path1, global_reference_text))
-                    units2 = list(get_document_lines_and_sentences(path2, global_reference_text))
-                    pairs = []
-                    for u1 in units1:
-                        for u2 in units2:
-                            if u1 == u2:
-                                continue
-                            ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
-                            if 0.65 <= ratio < 1.0:
-                                pairs.append((u1, u2, round(ratio * 100, 1)))
-                    pairs.sort(key=lambda x: x[2], reverse=True)
-                    
-                    st.session_state.deep_result_type = "paraphrased_matches"
-                    st.session_state.deep_para_pairs = pairs
-                    
-                    report_content = f"Paraphrase Deep Dive Report: Comparing '{file1.name}' and '{file2.name}'\n"
-                    report_content += f"Found {len(pairs)} potential paraphrased sentence matches:\n" + "="*70 + "\n\n"
-                    for p1, p2, score in pairs:
-                        report_content += f"[Similarity: {score}%]\n- Doc A: {p1}\n- Doc B: {p2}\n\n"
-                    st.session_state.deep_report_content = report_content
-                    st.session_state.deep_filename = "paraphrase_deep_dive_report.txt"
-
-                elif analysis_type == "Sentence Comparison":
-                    units1 = get_document_lines_and_sentences(path1, global_reference_text)
-                    units2 = get_document_lines_and_sentences(path2, global_reference_text)
-                    common_units = sorted(units1.intersection(units2))
-                    
-                    if not common_units:
-                        st.session_state.deep_result_type = "empty_sentences"
-                    else:
-                        report_content = f"Comparison Report: Comparing '{file1.name}' and '{file2.name}'\n"
-                        report_content += f"Found {len(common_units)} matching sentences/lines:\n" + "="*70 + "\n\n"
-                        for u in common_units:
-                            report_content += u + "\n\n"
-                        
-                        st.session_state.deep_result_type = "sentences"
-                        st.session_state.deep_count = len(common_units)
-                        st.session_state.deep_report_content = report_content
-                        st.session_state.deep_filename = "common_sentences_report.txt"
+                units1 = list(get_document_lines_and_sentences(path1, global_reference_text))
+                units2 = list(get_document_lines_and_sentences(path2, global_reference_text))
                 
-                else:
-                    paras1 = get_document_true_paragraphs(path1, global_reference_text)
-                    paras2 = get_document_true_paragraphs(path2, global_reference_text)
-                    common_paras = sorted(set(paras1).intersection(set(paras2)))
-                    
-                    if not common_paras:
-                        st.session_state.deep_result_type = "empty_paras"
-                    else:
-                        report_content = f"Comparison Report: Comparing '{file1.name}' and '{file2.name}'\n"
-                        report_content += f"Found {len(common_paras)} matching paragraphs:\n" + "="*70 + "\n\n"
-                        for p in common_paras:
-                            report_content += p + "\n\n" + "="*50 + "\n\n"
-                        
-                        st.session_state.deep_result_type = "paragraphs"
-                        st.session_state.deep_count = len(common_paras)
-                        st.session_state.deep_report_content = report_content
-                        st.session_state.deep_filename = "common_paragraphs_report.txt"
-            
+                high_match_instances = []
+                for u1 in units1:
+                    for u2 in units2:
+                        ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() * 100
+                        if ratio >= 50.0:
+                            high_match_instances.append({"doc_a_sentence": u1, "doc_b_sentence": u2, "similarity": round(ratio, 1)})
+                
+                high_match_instances.sort(key=lambda x: x["similarity"], reverse=True)
+                
+                st.session_state.deep_high_matches = high_match_instances
+                st.session_state.deep_analyzed = True
+                
+                if supabase is not None:
+                    try:
+                        deep_payload = {
+                            "user_email": user_email,
+                            "user_name": user_name,
+                            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "doc_a_name": file1.name,
+                            "doc_b_name": file2.name,
+                            "high_match_count_over_50pct": len(high_match_instances),
+                            "top_matches_summary": str(high_match_instances[:5])
+                        }
+                        supabase.table("beta_deep_dive_activity").insert(deep_payload).execute()
+                    except Exception:
+                        pass
+                
+                report_content = f"Deep Dive Match Report (>50% Matches)\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
+                for item in high_match_instances:
+                    report_content += f"[Similarity: {item['similarity']}%]\n- Doc A: {item['doc_a_sentence']}\n- Doc B: {item['doc_b_sentence']}\n\n"
+                st.session_state.deep_report_content = report_content
+                st.session_state.deep_filename = "deep_dive_over_50pct_report.txt"
+
             finally:
                 if os.path.exists(path1):
                     os.unlink(path1)
                 if os.path.exists(path2):
                     os.unlink(path2)
 
-    if st.session_state.get("deep_result_type") == "empty_sentences":
-        st.info("Found 0 matching sentences/lines.")
-    elif st.session_state.get("deep_result_type") == "empty_paras":
-        st.info("Found 0 matching paragraphs.")
-    elif st.session_state.get("deep_result_type") == "paraphrased_matches":
-        pairs = st.session_state.deep_para_pairs
-        if not pairs:
-            st.info("Found 0 potential paraphrased sentence matches.")
+    if st.session_state.get("deep_analyzed", False):
+        matches = st.session_state.deep_high_matches
+        st.success(f"Deep Dive Complete! Found **{len(matches)} matching instance(s)** with ≥50% similarity.")
+        if matches:
+            for item in matches:
+                with st.expander(f"Similarity: {item['similarity']}%"):
+                    st.markdown(f"**Doc A:** {item['doc_a_sentence']}")
+                    st.markdown(f"**Doc B:** {item['doc_b_sentence']}")
+            st.text_area("Report Preview", st.session_state.deep_report_content, height=250, key=f"deep_prev_{rc}")
+            st.download_button("📥 Download >50% Match Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"dl_deep_{rc}")
         else:
-            st.success(f"Found {len(pairs)} potential paraphrased sentence match(es)!")
-            for p1, p2, score in pairs:
-                with st.expander(f"Similarity Score: {score}%"):
-                    st.markdown(f"**Document A:** {p1}")
-                    st.markdown(f"**Document B:** {p2}")
-            st.text_area("Paraphrase Deep Dive Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_para_{rc}")
-            st.download_button("📥 Download Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_para_{rc}")
-
-    elif st.session_state.get("deep_result_type") == "excel_sheets_paraphrase":
-        st.success("Excel Sheet-by-Sheet Paraphrase analysis complete!")
-        for item in st.session_state.deep_excel_breakdown:
-            with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} potential paraphrased pairs found)"):
-                if not item['in_both']:
-                    st.warning("This sheet name exists in only one of the workbooks.")
-                else:
-                    pairs = item['paraphrase_pairs']
-                    if pairs:
-                        st.write("**Paraphrased Sentence Pairs:**")
-                        for p1, p2, score in pairs:
-                            st.markdown(f"- **[Similarity: {score}%]**\n  * **Doc A:** {p1}\n  * **Doc B:** {p2}")
-                    else:
-                        st.info("No potential paraphrased sentence matches found in this sheet.")
-        st.text_area("Full Sheet Paraphrase Breakdown Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_excel_para_{rc}")
-        st.download_button("📥 Download Excel Sheet Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_excel_para_{rc}")
-
-    elif st.session_state.get("deep_result_type") == "excel_sheets":
-        st.success("Excel Sheet-by-Sheet analysis complete!")
-        for item in st.session_state.deep_excel_breakdown:
-            with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} matching sentences found)"):
-                if not item['in_both']:
-                    st.warning("This sheet name exists in only one of the uploaded workbooks.")
-                else:
-                    if item['common_sentences']:
-                        st.write("**Matching Sentences / Text Answers:**")
-                        for s in item['common_sentences']:
-                            st.markdown(f"- {s}")
-                    else:
-                        st.info("No identical sentence matches found in this sheet.")
-        st.text_area("Full Sheet Breakdown Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_excel_{rc}")
-        st.download_button("📥 Download Excel Sheet Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_excel_{rc}")
-
-    elif st.session_state.get("deep_result_type") in ["sentences", "paragraphs"]:
-        count = st.session_state.deep_count
-        label_text = "matching sentence(s)/line(s)!" if st.session_state.deep_result_type == "sentences" else "matching paragraph(s)!"
-        st.success(f"Found {count} {label_text}")
-        st.text_area("Matching Preview", st.session_state.deep_report_content, height=300, key=f"deep_preview_area_{rc}")
-        st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_report_{rc}")
+            st.info("No matching text instances exceeding 50% similarity were found between these two documents.")
 
     if not file1 or not file2:
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
 # ==========================================
-# MODE 4: REPORT HISTORY DASHBOARD (WITH ADMIN AUDIT TRAIL)
+# MODE 4: REPORT HISTORY DASHBOARD & ADMIN AUDIT TRAIL
 # ==========================================
 elif app_mode == "📁 Report History Dashboard":
-    st.header("📁 Saved Report History & Activity Dashboard")
-    st.write("Review your generated reports, and view platform user activity logs.")
+    st.header("📁 Saved Report History & User Audit Trail")
+    st.write("Inspect your generated reports and view complete backend logs of user login sessions, settings, and high-similarity matches.")
     
-    if not user_is_logged_in:
-        st.warning("🔒 Please sign in using the top-right **Sign in with Google** button to view and manage your report history.")
-    else:
-        tab_my_reports, tab_audit_log = st.tabs(["My Saved Reports", "📊 Beta User Activity Audit Trail"])
-        
-        with tab_my_reports:
-            if not st.session_state.saved_reports:
-                st.info("No reports saved yet. Run a Plagiarism Analysis with 'Save Generated Reports' enabled to populate your history.")
-            else:
-                col_dash1, col_dash2 = st.columns([0.8, 0.2])
-                with col_dash2:
-                    if st.button("🗑️ Clear All History", type="secondary", key=f"clear_hist_btn_{rc}"):
-                        st.session_state.saved_reports = []
-                        st.rerun()
+    tab_my_reports, tab_audit_log, tab_deep_log = st.tabs(["My Saved Reports", "📊 User Activity & Settings Log", "🔍 Deep Dive (>50%) Log"])
+    
+    with tab_my_reports:
+        if not st.session_state.saved_reports:
+            st.info("No reports saved yet. Run a Plagiarism Analysis with 'Save Generated Reports' enabled to populate your history.")
+        else:
+            col_dash1, col_dash2 = st.columns([0.8, 0.2])
+            with col_dash2:
+                if st.button("🗑️ Clear All History", type="secondary", key=f"clear_hist_btn_{rc}"):
+                    st.session_state.saved_reports = []
+                    st.rerun()
 
-                for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
-                    with st.expander(f"📌 [{rep['timestamp']}] {rep['course']} — {rep['type']} ({rep['files_count']} files, Expires: {rep['expiry']})"):
-                        st.write(f"**Course/Assignment:** {rep['course']}")
-                        st.write(f"**Analysis Mode:** {rep['type']}")
-                        st.write(f"**Files Processed:** {rep['files_count']}")
-                        st.write(f"**Scheduled Expiry:** {rep['expiry']}")
-                        
-                        st.dataframe(rep['df'].style.format("{:.2f}%"))
-                        
-                        h_output = io.BytesIO()
-                        with pd.ExcelWriter(h_output, engine='openpyxl') as writer:
-                            rep['df'].to_excel(writer, sheet_name='Report History')
-                        
+            for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
+                with st.expander(f"📌 [{rep['timestamp']}] {rep['course']} — {rep['type']} ({rep['files_count']} files, Expires: {rep['expiry']})"):
+                    st.write(f"**Course/Assignment:** {rep['course']}")
+                    st.write(f"**Analysis Mode:** {rep['type']}")
+                    st.write(f"**Files Processed:** {rep['files_count']}")
+                    st.write(f"**Scheduled Expiry:** {rep['expiry']}")
+                    
+                    st.dataframe(rep['df'].style.format("{:.2f}%"))
+                    
+                    h_output = io.BytesIO()
+                    with pd.ExcelWriter(h_output, engine='openpyxl') as writer:
+                        rep['df'].to_excel(writer, sheet_name='Report History')
+                    
+                    st.download_button(
+                        label=f"📥 Download Report ({rep['timestamp']})",
+                        data=h_output.getvalue(),
+                        file_name=f"history_report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"hist_dl_{idx}_{rc}"
+                    )
+    
+    with tab_audit_log:
+        st.subheader("Plagiarism Checker Activity & Settings Audit Trail")
+        st.write("Tracks who logged in, timestamps, files scanned, and the exact settings used.")
+        if supabase is not None:
+            try:
+                response = supabase.table("beta_user_activity").select("*").order("timestamp", desc=True).execute()
+                logs = response.data
+                if logs:
+                    df_logs = pd.DataFrame(logs)
+                    st.dataframe(df_logs, use_container_width=True)
+                    
+                    # --- RESTRICTED DOWNLOAD BUTTON FOR arunpeswani@gmail.com ONLY ---
+                    if user_email.lower() == "arunpeswani@gmail.com":
+                        csv_data = df_logs.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            label=f"📥 Download Report ({rep['timestamp']})",
-                            data=h_output.getvalue(),
-                            file_name=f"history_report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            key=f"hist_dl_{idx}_{rc}"
+                            label="📥 Download Plagiarism Activity Log (CSV)",
+                            data=csv_data,
+                            file_name="beta_user_activity_audit_trail.csv",
+                            mime="text/csv",
+                            key=f"dl_audit_csv_{rc}"
                         )
+                else:
+                    st.info("No user activity logs recorded in Supabase yet.")
+            except Exception as ex:
+                st.warning("⚠️ Table `beta_user_activity` not found in Supabase.")
+        else:
+            st.info("💡 Supabase is not connected.")
         
-        with tab_audit_log:
-            st.subheader("Beta User Activity & Similarity Audit Trail")
-            st.write("This table tracks all scans performed by users on this beta page, including user identity, timestamps, file counts, and risk metrics.")
-            if supabase is not None:
-                try:
-                    response = supabase.table("beta_user_activity").select("*").order("timestamp", desc=True).execute()
-                    logs = response.data
-                    if logs:
-                        df_logs = pd.DataFrame(logs)
-                        st.dataframe(df_logs, use_container_width=True)
-                    else:
-                        st.info("No user activity logs recorded in Supabase yet. Run a scan while logged in to generate an entry.")
-                except Exception as ex:
-                    st.warning("⚠️ Could not load activity logs from Supabase. Make sure the `beta_user_activity` table exists in your database.")
-            else:
-                st.info("💡 Supabase secrets are not configured. Remote audit logging is currently bypassed.")
-            
-            with st.expander("🛠️ SQL Setup Instructions for Supabase Table"):
-                st.code("""
--- Run this SQL command in your Supabase SQL Editor to create the audit table:
+        with st.expander("🛠️ SQL for Activity Table"):
+            st.code("""
 create table beta_user_activity (
     id bigint generated by default as identity primary key,
     user_email text,
@@ -1024,12 +788,56 @@ create table beta_user_activity (
     course text,
     analysis_type text,
     files_scanned int,
+    min_ngram_words int,
+    max_ngram_words int,
+    flagging_threshold int,
     max_similarity numeric,
     avg_similarity numeric,
-    flagged_pairs_count int,
-    threshold_used int
+    flagged_pairs_count int
 );
-                """, language="sql")
+            """, language="sql")
+
+    with tab_deep_log:
+        st.subheader("Deep Dive Matcher (>50% Instances) Log")
+        st.write("Tracks deep dive document comparisons and counts of text instances matching at 50% similarity or higher.")
+        if supabase is not None:
+            try:
+                response = supabase.table("beta_deep_dive_activity").select("*").order("timestamp", desc=True).execute()
+                logs = response.data
+                if logs:
+                    df_deep = pd.DataFrame(logs)
+                    st.dataframe(df_deep, use_container_width=True)
+                    
+                    # --- RESTRICTED DOWNLOAD BUTTON FOR arunpeswani@gmail.com ONLY ---
+                    if user_email.lower() == "arunpeswani@gmail.com":
+                        csv_deep = df_deep.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Download Deep Dive Activity Log (CSV)",
+                            data=csv_deep,
+                            file_name="beta_deep_dive_activity_log.csv",
+                            mime="text/csv",
+                            key=f"dl_deep_csv_{rc}"
+                        )
+                else:
+                    st.info("No deep dive logs recorded in Supabase yet.")
+            except Exception as ex:
+                st.warning("⚠️ Table `beta_deep_dive_activity` not found in Supabase.")
+        else:
+            st.info("💡 Supabase is not connected.")
+        
+        with st.expander("🛠️ SQL for Deep Dive Table"):
+            st.code("""
+create table beta_deep_dive_activity (
+    id bigint generated by default as identity primary key,
+    user_email text,
+    user_name text,
+    timestamp text,
+    doc_a_name text,
+    doc_b_name text,
+    high_match_count_over_50pct int,
+    top_matches_summary text
+);
+            """, language="sql")
 
 # ==========================================
 # MODE 5: USER GUIDE & HELP
@@ -1050,33 +858,13 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("2. How It Works & Key Features")
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
-        "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar. It persists across modes and automatically strips out shared common boilerplate text from student papers.\n"
-        "* **Flexible File Formats & Scanned Handwriting Support:** Fully supports `.docx`, `.pdf`, `.txt`, `.rtf`, `.md`, `.xlsx`, `.xls`, and image formats (`.png`, `.jpg`, `.jpeg`, `.tiff`, `.tif`, `.heic`, `.heif`, `.webp`). For scanned handwritten PDFs or image submissions, APLens automatically applies bilingual **OCR (Optical Character Recognition - Hindi & English)** to extract and compare the handwriting.\n"
-        "* **Batch Upload & ZIP Archive Note:** Upload individual files (up to 5MB each), select entire folders directly, or upload batch `.zip` archives (configured up to 100MB for large classes of 90+ submissions).\n"
-        "  * ⚠️ *Important ZIP Rule:* If you upload ZIP files for plagiarism checking, **there must be no nested ZIP files inside the uploaded ZIP**. If students submit ZIP files inside the batch archive, the program will not be able to read or check those nested files.\n"
-        "* **Plagiarism & Paraphrase Checker:** Calculates cross-document similarity matrices using **TF-IDF cosine similarity** (for exact matching) or **Fuzzy Sequence Matching** (to detect paraphrased rewrites).\n"
-        "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
-        "* **Proportionate Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) with native scrollbars and zoom tools.\n"
-        "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection.\n"
-        "* **Beta Feature - Native Google OIDC Authentication & Audit Logging:** Secure single-click sign-in via Google accounts, paired with automatic backend logging of user activity, files scanned, and similarity summaries.\n"
-        "* **Beta Feature - Report History Dashboard:** Store reports temporarily in session state with configurable retention windows (1 day to 1 month)."
+        "* **Gated Google Login:** Users must authenticate via Google before accessing any tools, guaranteeing complete audit logs of user identities.\n"
+        "* **Comprehensive Backend Activity Logging:** Automatically stores user emails, names, timestamps, settings used (min/max N-grams, flagging thresholds), files scanned, and similarity summaries in Supabase.\n"
+        "* **Deep Dive >50% Match Tracking:** Captures sentence-level pairs sharing 50% or more similarity during 2-document deep dive comparisons.\n"
+        "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar to automatically strip out shared boilerplate text."
     )
 
-    st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
+    st.subheader("3. Support, Contact & Feedback")
     st.write(
-        "When you run the **Plagiarism Checker**, you can download an Excel report (`plagiarism_report.xlsx`). How to read it:\n\n"
-        "* **The Matrix Structure:** The Excel spreadsheet is a symmetric cross-comparison table. Both the **Rows** and **Columns** "
-        "represent the file names of the uploaded student submissions.\n"
-        "* **Reading Cell Values:** Each cell contains a percentage value (from 0% to 100%) indicating how much textual overlap exists "
-        "between the document in that row and the document in that column.\n"
-        "* **The Diagonal (100%):** The cells running diagonally from top-left to bottom-right will always show **100%**, because a document "
-        "is being compared against itself.\n"
-        "* **Identifying Potential Plagiarism:** Look for high-similarity scores off the diagonal (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
-        "means those two particular student submissions share substantial matching text sequences and warrant a closer manual review."
-    )
-
-    st.subheader("4. Support, Contact & Feedback")
-    st.write(
-        "If you encounter any issues, require assistance, or have ideas on how to make APLens even better, please feel free to reach out. "
-        "You can contact **Arun Peswani** for any help required. Your suggestions, feedback, and feature requests are always warmly welcomed!"
+        "If you encounter any issues or require assistance, please contact **Arun Peswani**. Your feedback is always warmly welcomed!"
     )
