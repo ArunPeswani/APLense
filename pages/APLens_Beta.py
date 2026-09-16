@@ -10,27 +10,27 @@ user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", No
 if not user_avatar:
     user_avatar = "https://www.w3schools.com/howto/img_avatar.png"
 
-# --- CUSTOM CSS FOR OFFICIAL GOOGLE PILL BUTTON ---
+# --- CUSTOM CSS FOR FULLY ROUNDED PILL POPOVER BUTTON ---
 if not st.user.is_logged_in:
     st.markdown("""
         <style>
-            /* Transform the Streamlit popover button into the official Google sign-in pill */
-            div[data-testid="stPopover"] > button {
-                border-radius: 20px !important;
+            /* Force fully rounded pill shape on the sign-in popover button */
+            [data-testid="stPopover"] > button {
+                border-radius: 24px !important;
                 border: 1px solid #dadce0 !important;
                 background-color: #ffffff !important;
                 color: #3c4043 !important;
                 font-family: 'Roboto', sans-serif !important;
                 font-weight: 500 !important;
                 font-size: 14px !important;
-                padding: 8px 20px !important;
+                padding: 6px 22px !important;
                 box-shadow: 0 1px 2px rgba(0,0,0,0.05);
                 float: right;
             }
-            div[data-testid="stPopover"] > button:hover {
+            [data-testid="stPopover"] > button:hover {
                 background-color: #f8f9fa !important;
                 border-color: #dadce0 !important;
-                box-shadow: 0 1px 3px rgba(60,64,67,0.3);
+                box-shadow: 0 1px 3px rgba(60,64,67,0.2);
             }
         </style>
     """, unsafe_allow_html=True)
@@ -69,7 +69,7 @@ with header_col2:
                 if st.button("Sign Out", type="secondary", use_container_width=True):
                     st.logout()
     else:
-        # Logged Out State: Official Pill Button matching the target look
+        # Logged Out State: Pill Button with clean authentication trigger
         with st.popover("Sign in with Google"):
             st.markdown("""
                 <div style="text-align: center; padding: 5px;">
