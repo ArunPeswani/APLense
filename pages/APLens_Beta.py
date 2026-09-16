@@ -289,7 +289,7 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 ocr_text = ""
                 for img in images:
                     img_gray = img.convert('L')
-                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.5)
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
                     ocr_text += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + " "
                 if len(ocr_text.strip()) > len(text.strip()):
                     text = ocr_text
@@ -318,7 +318,7 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 
         elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp')):
             image = Image.open(io.BytesIO(file_bytes)).convert('L')
-            image = ImageEnhance.Contrast(image).enhance(2.5)
+            image = ImageEnhance.Contrast(image).enhance(2.0)
             text = pytesseract.image_to_string(image, lang='hin+eng')
             
     except Exception as e:
@@ -638,7 +638,7 @@ if app_mode == "Plagiarism Checker":
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use horizontal/vertical scrollbars to navigate the matrix. Hover over any cell for exact scores.*")
+        st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
         
         truncated_names = [name if len(name) <= 25 else name[:22] + "..." for name in filenames]
         chart_dimension = max(900, total_files * 35)
@@ -658,8 +658,8 @@ if app_mode == "Plagiarism Checker":
             width=chart_dimension,
             height=chart_dimension,
             margin=dict(l=180, r=50, t=50, b=180),
-            xaxis=dict(tickangle=-45, type='category', tickmode='array', tickvals=list(range(len(truncated_names))), ticktext=truncated_names),
-            yaxis=dict(autorange='reversed', type='category', tickmode='array', tickvals=list(range(len(truncated_names))), ticktext=truncated_names)
+            xaxis=dict(tickangle=-45, type='category'),
+            yaxis=dict(autorange='reversed', type='category')
         )
         
         st.plotly_chart(fig, use_container_width=False)
@@ -738,7 +738,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
                     img_gray = img.convert('L')
-                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.5)
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
                     full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
@@ -760,7 +760,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
             image = Image.open(file_path).convert('L')
-            image = ImageEnhance.Contrast(image).enhance(2.5)
+            image = ImageEnhance.Contrast(image).enhance(2.0)
             full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
