@@ -741,10 +741,15 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 # MODE 4: REPORT HISTORY DASHBOARD & ADMIN AUDIT TRAIL
 # ==========================================
 elif app_mode == "📁 Report History Dashboard":
-    st.header("📁 Saved Report History & Local Audit Trail")
-    st.write("Inspect your generated reports and view complete backend logs of user login sessions, settings, and high-similarity matches.")
+    st.header("📁 Saved Report History Dashboard")
     
-    tab_my_reports, tab_audit_log, tab_deep_log = st.tabs(["My Saved Reports", "📊 User Activity & Settings Log", "🔍 Deep Dive (>50%) Log"])
+    # Check if the logged-in user is Arun
+    is_admin = user_email.lower() == "arunpeswani@gmail.com"
+    
+    if is_admin:
+        tab_my_reports, tab_audit_log, tab_deep_log = st.tabs(["My Saved Reports", "📊 User Activity & Settings Log", "🔍 Deep Dive (>50%) Log"])
+    else:
+        tab_my_reports, = st.tabs(["My Saved Reports"])
     
     with tab_my_reports:
         if not st.session_state.saved_reports:
@@ -777,19 +782,17 @@ elif app_mode == "📁 Report History Dashboard":
                         key=f"hist_dl_{idx}_{rc}"
                     )
     
-    with tab_audit_log:
-        st.subheader("Plagiarism Checker Activity & Settings Audit Trail")
-        st.write("Tracks who logged in, timestamps, files scanned, and the exact settings used.")
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            df_logs = pd.read_sql_query("select * from beta_user_activity order by timestamp desc", conn)
-            conn.close()
-            
-            if not df_logs.empty:
-                st.dataframe(df_logs, use_container_width=True)
+    # These admin tabs will now ONLY render if logged in as arunpeswani@gmail.com
+    if is_admin:
+        with tab_audit_log:
+            st.subheader("Plagiarism Checker Activity & Settings Audit Trail")
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                df_logs = pd.read_sql_query("select * from beta_user_activity order by timestamp desc", conn)
+                conn.close()
                 
-                # --- RESTRICTED DOWNLOAD BUTTON FOR arunpeswani@gmail.com ONLY ---
-                if user_email.lower() == "arunpeswani@gmail.com":
+                if not df_logs.empty:
+                    st.dataframe(df_logs, use_container_width=True)
                     csv_data = df_logs.to_csv(index=False).encode('utf-8')
                     st.download_button(
                         label="📥 Download Plagiarism Activity Log (CSV)",
@@ -798,24 +801,20 @@ elif app_mode == "📁 Report History Dashboard":
                         mime="text/csv",
                         key=f"dl_audit_csv_{rc}"
                     )
-            else:
-                st.info("No user activity logs recorded yet.")
-        except Exception as ex:
-            st.warning(f"Could not load logs: {ex}")
+                else:
+                    st.info("No user activity logs recorded yet.")
+            except Exception as ex:
+                st.warning(f"Could not load logs: {ex}")
 
-    with tab_deep_log:
-        st.subheader("Deep Dive Matcher (>50% Instances) Log")
-        st.write("Tracks deep dive document comparisons and counts of text instances matching at 50% similarity or higher.")
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            df_deep = pd.read_sql_query("select * from beta_deep_dive_activity order by timestamp desc", conn)
-            conn.close()
-            
-            if not df_deep.empty:
-                st.dataframe(df_deep, use_container_width=True)
+        with tab_deep_log:
+            st.subheader("Deep Dive Matcher (>50% Instances) Log")
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                df_deep = pd.read_sql_query("select * from beta_deep_dive_activity order by timestamp desc", conn)
+                conn.close()
                 
-                # --- RESTRICTED DOWNLOAD BUTTON FOR arunpeswani@gmail.com ONLY ---
-                if user_email.lower() == "arunpeswani@gmail.com":
+                if not df_deep.empty:
+                    st.dataframe(df_deep, use_container_width=True)
                     csv_deep = df_deep.to_csv(index=False).encode('utf-8')
                     st.download_button(
                         label="📥 Download Deep Dive Activity Log (CSV)",
@@ -824,10 +823,10 @@ elif app_mode == "📁 Report History Dashboard":
                         mime="text/csv",
                         key=f"dl_deep_csv_{rc}"
                     )
-            else:
-                st.info("No deep dive logs recorded yet.")
-        except Exception as ex:
-            st.warning(f"Could not load deep dive logs: {ex}")
+                else:
+                    st.info("No deep dive logs recorded yet.")
+            except Exception as ex:
+                st.warning(f"Could not load deep dive logs: {ex}")
 
 # ==========================================
 # MODE 5: USER GUIDE & HELP
