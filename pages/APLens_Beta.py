@@ -97,44 +97,58 @@ if "saved_reports" not in st.session_state:
 
 rc = st.session_state.reset_count_beta
 
-# --- HANDLE OAUTH TOKENS VIA FRONTEND JAVASCRIPT & SUPABASE ---
-st.markdown("""
-    <script>
-        async function handleOAuth() {
-            if (window.location.hash && window.location.hash.includes('access_token')) {
-                const hashParams = new URLSearchParams(window.location.hash.substring(1));
-                const accessToken = hashParams.get('access_token');
-                if (accessToken) {
-                    window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
-                    window.location.search = '?access_token=' + accessToken;
-                }
-            }
-        }
-        handleOAuth();
-    </script>
-""", unsafe_allow_html=True)
+# --- CAPTURE & PROCESS OAUTH HASH TOKENS ---
+# Fallback / Direct check: if tokens landed in query params
+qp = st.query_params
+token_from_url = qp.get("access_token")
+refresh_from_url = qp.get("refresh_token")
 
-# Handle incoming query parameters after token capture
-query_params = st.query_params
-if "access_token" in query_params:
-    token = query_params["access_token"]
+# 1. If JavaScript forwarded them to query params
+if token_from_url:
     try:
-        user_resp = supabase.auth.get_user(token)
-        if user_resp and user_resp.user:
+        if refresh_from_url:
+            sess_res = supabase.auth.set_session(token_from_url, refresh_from_url)
+            user_obj = sess_res.user if sess_res else None
+        else:
+            user_obj = supabase.auth.get_user(token_from_url).user
+            
+        if user_obj:
             st.session_state.logged_in = True
-            st.session_state.user_email = user_resp.user.email
+            st.session_state.user_email = user_obj.email or ""
             st.query_params.clear()
             st.rerun()
-    except Exception:
-        pass
+    except Exception as e:
+        st.error(f"Authentication error: {e}")
+        st.query_params.clear()
 
-# Fallback session check
+# 2. Client-side bridge to reliably extract URL hash (#access_token)
+st.components.v1.html("""
+    <script>
+        const hash = window.parent.location.hash;
+        if (hash && hash.includes('access_token')) {
+            const params = new URLSearchParams(hash.substring(1));
+            const access = params.get('access_token');
+            const refresh = params.get('refresh_token');
+            if (access) {
+                // Clear the hash fragment and reload with query params
+                const cleanPath = window.parent.location.pathname;
+                let target = cleanPath + '?access_token=' + encodeURIComponent(access);
+                if (refresh) {
+                    target += '&refresh_token=' + encodeURIComponent(refresh);
+                }
+                window.parent.location.replace(target);
+            }
+        }
+    </script>
+""", height=0, width=0)
+
+# 3. Fallback check for an active Supabase session
 if not st.session_state.logged_in:
     try:
         current_session = supabase.auth.get_session()
         if current_session and current_session.user:
             st.session_state.logged_in = True
-            st.session_state.user_email = current_session.user.email
+            st.session_state.user_email = current_session.user.email or ""
     except Exception:
         pass
 
