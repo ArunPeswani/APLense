@@ -20,7 +20,7 @@ import pytesseract
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
-st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
+st.set_page_config(page_title="APLens Beta - Plagiarism Suite", page_icon="🧪", layout="centered")
 
 # --- COMPACT SIDEBAR CSS & ISOLATED GOOGLE SIGN-IN BUTTON STYLING ---
 st.markdown("""
@@ -166,7 +166,7 @@ if user_is_logged_in:
 
     interval_days_map = {"1 day": 1, "1 week": 7, "10 days": 10, "A Fortnight": 14, "3 weeks": 21, "A Month": 30}
     expiry_date = (datetime.datetime.now() + datetime.timedelta(days=interval_days_map.get(selected_interval, 7))).strftime("%Y-%m-%d")
-    st.sidebar.caption(f"📅 Calculated auto-deletion date: **{expiry_date}**")
+    st.sidebar.caption(f"📅 Auto-Deletion date: **{expiry_date}**")
 else:
     save_reports_toggle = False
     st.sidebar.info("💡 **Sign in** via the top-right button to enable automated report history storage and custom retention windows.")
