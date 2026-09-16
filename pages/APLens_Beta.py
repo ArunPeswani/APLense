@@ -22,7 +22,7 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
 
-# --- COMPACT SIDEBAR CSS & TARGETED GOOGLE LOGIN STYLING ---
+# --- COMPACT SIDEBAR CSS & PRECISE GOOGLE SIGN-IN STYLING ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -35,14 +35,11 @@ st.markdown("""
             border-radius: 8px;
             text-align: center;
         }
-        /* Style ONLY the Google Sign-In button with the logo and pill shape */
-        button[kind="secondary"][data-testid="baseButton-secondary"]:has(div:contains("Sign in with Google")),
-        div.stButton > button {
-            /* Fallback general button styles if needed, but we target login specifically via key */
-        }
         
-        /* Targeted styling for the Google Sign-In button using unique key pattern */
-        button[key*="google_login_btn"] {
+        /* Precisely target ONLY the button containing "Sign in with Google" */
+        button[kind="secondary"]:has(p:contains("Sign in with Google")),
+        button[kind="primary"]:has(p:contains("Sign in with Google")),
+        button:has(div:contains("Sign in with Google")) {
             border-radius: 24px !important;
             border: 1px solid #dadce0 !important;
             background-color: #ffffff !important;
@@ -57,7 +54,7 @@ st.markdown("""
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             float: right;
         }
-        button[key*="google_login_btn"]:hover {
+        button:has(div:contains("Sign in with Google")):hover {
             background-color: #f8f9fa !important;
             border-color: #dadce0 !important;
             box-shadow: 0 1px 3px rgba(60,64,67,0.2);
@@ -119,7 +116,7 @@ with header_col2:
                 if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_btn_{rc}"):
                     st.logout()
     else:
-        # Logged Out State: Direct button with unique key so CSS only applies here
+        # Logged Out State: Google Sign-in button with unique text selector matching CSS
         if st.button("Sign in with Google", key=f"google_login_btn_{rc}"):
             st.login("google")
 
