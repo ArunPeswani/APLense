@@ -22,7 +22,7 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
 
-# --- COMPACT SIDEBAR CSS & PRECISE GOOGLE SIGN-IN STYLING ---
+# --- COMPACT SIDEBAR CSS & ISOLATED GOOGLE LOGIN BUTTON STYLING ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -36,10 +36,8 @@ st.markdown("""
             text-align: center;
         }
         
-        /* Precisely target ONLY the button containing "Sign in with Google" */
-        button[kind="secondary"]:has(p:contains("Sign in with Google")),
-        button[kind="primary"]:has(p:contains("Sign in with Google")),
-        button:has(div:contains("Sign in with Google")) {
+        /* Apply official pill styling and Google logo ONLY to buttons inside the google-signin-container */
+        div.google-signin-container div.stButton > button {
             border-radius: 24px !important;
             border: 1px solid #dadce0 !important;
             background-color: #ffffff !important;
@@ -54,7 +52,7 @@ st.markdown("""
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             float: right;
         }
-        button:has(div:contains("Sign in with Google")):hover {
+        div.google-signin-container div.stButton > button:hover {
             background-color: #f8f9fa !important;
             border-color: #dadce0 !important;
             box-shadow: 0 1px 3px rgba(60,64,67,0.2);
@@ -116,9 +114,11 @@ with header_col2:
                 if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_btn_{rc}"):
                     st.logout()
     else:
-        # Logged Out State: Google Sign-in button with unique text selector matching CSS
+        # Logged Out State: Wrapped inside a custom div container to isolate Google button styles
+        st.markdown('<div class="google-signin-container">', unsafe_allow_html=True)
         if st.button("Sign in with Google", key=f"google_login_btn_{rc}"):
             st.login("google")
+        st.markdown('</div>', unsafe_allow_html=True)
 
 # ==========================================
 # SIDEBAR SETUP
@@ -962,7 +962,7 @@ elif app_mode == "💡 User Guide & Help":
 
     st.subheader("3. How to Read the Output Files (Especially the .xlsx File)")
     st.write(
-        "When you run the **Plagiarism Checker**, you can download an Excel report (`plagiarism_report.xlsx`). Here is how to read it:\n\n"
+        "When you run the **Plagiarism Checker**, you can download an Excel report (`plagiarism_report.xlsx`). How to read it:\n\n"
         "* **The Matrix Structure:** The Excel spreadsheet is a symmetric cross-comparison table. Both the **Rows** and **Columns** "
         "represent the file names of the uploaded student submissions.\n"
         "* **Reading Cell Values:** Each cell contains a percentage value (from 0% to 100%) indicating how much textual overlap exists "
