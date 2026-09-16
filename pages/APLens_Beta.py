@@ -22,7 +22,7 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
 
-# --- COMPACT SIDEBAR CSS & CLEAN UPLOADER HELPER STYLING ---
+# --- COMPACT SIDEBAR CSS & TARGETED UPLOADER HELPER STYLING ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -66,13 +66,12 @@ st.markdown("""
             height: 18px;
         }
 
-        /* Cleanly override file uploader helper text to show only size info */
-        [data-testid="stFileUploader"] [data-testid="stMarkdownContainer"] p,
+        /* Target ONLY the extension list text next to the uploader button and replace it with size info */
         [data-testid="stFileUploader"] section small {
             font-size: 0px !important;
         }
         [data-testid="stFileUploader"] section small::after {
-            content: "Max 5MB per file";
+            content: "5MB per file";
             font-size: 12px !important;
             color: #6c757d;
         }
