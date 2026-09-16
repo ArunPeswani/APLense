@@ -98,51 +98,49 @@ if "saved_reports" not in st.session_state:
 rc = st.session_state.reset_count_beta
 
 # --- CAPTURE & PROCESS OAUTH HASH TOKENS ---
-# Fallback / Direct check: if tokens landed in query params
 qp = st.query_params
-token_from_url = qp.get("access_token")
-refresh_from_url = qp.get("refresh_token")
+oa_token = qp.get("access_token")
+oa_refresh = qp.get("refresh_token")
 
-# 1. If JavaScript forwarded them to query params
-if token_from_url:
+# Check incoming query params after bridge redirect
+if oa_token:
     try:
-        if refresh_from_url:
-            sess_res = supabase.auth.set_session(token_from_url, refresh_from_url)
+        if oa_refresh:
+            sess_res = supabase.auth.set_session(oa_token, oa_refresh)
             user_obj = sess_res.user if sess_res else None
         else:
-            user_obj = supabase.auth.get_user(token_from_url).user
-            
+            user_obj = supabase.auth.get_user(oa_token).user
+
         if user_obj:
             st.session_state.logged_in = True
             st.session_state.user_email = user_obj.email or ""
             st.query_params.clear()
             st.rerun()
     except Exception as e:
-        st.error(f"Authentication error: {e}")
+        st.error(f"Authentication failed: {e}")
         st.query_params.clear()
 
-# 2. Client-side bridge to reliably extract URL hash (#access_token)
-st.components.v1.html("""
+# Native JavaScript bridge (runs in top-level window, no sandboxed iframe)
+st.html("""
     <script>
-        const hash = window.parent.location.hash;
-        if (hash && hash.includes('access_token')) {
-            const params = new URLSearchParams(hash.substring(1));
-            const access = params.get('access_token');
-            const refresh = params.get('refresh_token');
-            if (access) {
-                // Clear the hash fragment and reload with query params
-                const cleanPath = window.parent.location.pathname;
-                let target = cleanPath + '?access_token=' + encodeURIComponent(access);
-                if (refresh) {
-                    target += '&refresh_token=' + encodeURIComponent(refresh);
+        (function() {
+            const h = window.location.hash;
+            if (h && h.includes('access_token')) {
+                const params = new URLSearchParams(h.substring(1));
+                const acc = params.get('access_token');
+                const ref = params.get('refresh_token');
+                if (acc) {
+                    const newUrl = window.location.origin + window.location.pathname 
+                        + '?access_token=' + encodeURIComponent(acc) 
+                        + (ref ? '&refresh_token=' + encodeURIComponent(ref) : '');
+                    window.location.replace(newUrl);
                 }
-                window.parent.location.replace(target);
             }
-        }
+        })();
     </script>
-""", height=0, width=0)
+""")
 
-# 3. Fallback check for an active Supabase session
+# Fallback session check
 if not st.session_state.logged_in:
     try:
         current_session = supabase.auth.get_session()
@@ -151,7 +149,6 @@ if not st.session_state.logged_in:
             st.session_state.user_email = current_session.user.email or ""
     except Exception:
         pass
-
 # ==========================================
 # TOP HEADER & REAL SUPABASE AUTH BAR
 # ==========================================
