@@ -2,6 +2,7 @@ import io
 import os
 import zipfile
 import datetime
+import sqlite3
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -20,24 +21,49 @@ import pytesseract
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
-# Supabase Client Import for Database Activity & Detailed Reports
-from supabase import create_client, Client
-
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
 
-# --- SAFE INITIALIZE SUPABASE CLIENT ---
-@st.cache_resource
-def init_supabase() -> Client:
-    try:
-        url = st.secrets.get("SUPABASE_URL")
-        key = st.secrets.get("SUPABASE_ANON_KEY")
-        if url and key:
-            return create_client(url, key)
-    except Exception:
-        pass
-    return None
+# --- LOCAL SQLITE DATABASE INITIALIZATION ---
+DB_FILE = "aplens_audit.db"
 
-supabase = init_supabase()
+def init_local_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    # Table for Plagiarism Checker Activity & Settings
+    cursor.execute("""
+        create table if not exists beta_user_activity (
+            id integer primary key autoincrement,
+            user_email text,
+            user_name text,
+            timestamp text,
+            course text,
+            analysis_type text,
+            files_scanned int,
+            min_ngram_words int,
+            max_ngram_words int,
+            flagging_threshold int,
+            max_similarity numeric,
+            avg_similarity numeric,
+            flagged_pairs_count int
+        )
+    """)
+    # Table for Deep Dive Matcher (>50% Match Instances)
+    cursor.execute("""
+        create table if not exists beta_deep_dive_activity (
+            id integer primary key autoincrement,
+            user_email text,
+            user_name text,
+            timestamp text,
+            doc_a_name text,
+            doc_b_name text,
+            high_match_count_over_50pct int,
+            top_matches_summary text
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+init_local_db()
 
 # --- COMPACT SIDEBAR CSS & CLEAN UPLOADER HELPER STYLING ---
 st.markdown("""
@@ -436,26 +462,25 @@ if app_mode == "Plagiarism Checker":
                 flagged_pairs_count = sum(1 for score in flat_scores if score >= similarity_threshold)
                 current_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                # --- LOG USER ACTIVITY & SETTINGS TO SUPABASE ---
-                if supabase is not None:
-                    try:
-                        activity_payload = {
-                            "user_email": user_email,
-                            "user_name": user_name,
-                            "timestamp": current_timestamp,
-                            "course": st.session_state.beta_course,
-                            "analysis_type": analysis_mode_label,
-                            "files_scanned": total_files,
-                            "min_ngram_words": min_words,
-                            "max_ngram_words": max_words,
-                            "flagging_threshold": similarity_threshold,
-                            "max_similarity": round(max_sim, 2),
-                            "avg_similarity": round(avg_sim, 2),
-                            "flagged_pairs_count": flagged_pairs_count
-                        }
-                        supabase.table("beta_user_activity").insert(activity_payload).execute()
-                    except Exception:
-                        pass
+                # --- LOG USER ACTIVITY & SETTINGS TO LOCAL SQLITE ---
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        insert into beta_user_activity (
+                            user_email, user_name, timestamp, course, analysis_type, 
+                            files_scanned, min_ngram_words, max_ngram_words, 
+                            flagging_threshold, max_similarity, avg_similarity, flagged_pairs_count
+                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        user_email, user_name, current_timestamp, st.session_state.beta_course, analysis_mode_label,
+                        total_files, min_words, max_words, similarity_threshold,
+                        round(max_sim, 2), round(avg_sim, 2), flagged_pairs_count
+                    ))
+                    conn.commit()
+                    conn.close()
+                except Exception:
+                    pass
 
                 if save_reports_toggle:
                     st.session_state.saved_reports.append({
@@ -667,20 +692,22 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 st.session_state.deep_high_matches = high_match_instances
                 st.session_state.deep_analyzed = True
                 
-                if supabase is not None:
-                    try:
-                        deep_payload = {
-                            "user_email": user_email,
-                            "user_name": user_name,
-                            "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "doc_a_name": file1.name,
-                            "doc_b_name": file2.name,
-                            "high_match_count_over_50pct": len(high_match_instances),
-                            "top_matches_summary": str(high_match_instances[:5])
-                        }
-                        supabase.table("beta_deep_dive_activity").insert(deep_payload).execute()
-                    except Exception:
-                        pass
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        insert into beta_deep_dive_activity (
+                            user_email, user_name, timestamp, doc_a_name, doc_b_name, 
+                            high_match_count_over_50pct, top_matches_summary
+                        ) values (?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        user_email, user_name, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        file1.name, file2.name, len(high_match_instances), str(high_match_instances[:5])
+                    ))
+                    conn.commit()
+                    conn.close()
+                except Exception:
+                    pass
                 
                 report_content = f"Deep Dive Match Report (>50% Matches)\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
                 for item in high_match_instances:
@@ -714,7 +741,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 # MODE 4: REPORT HISTORY DASHBOARD & ADMIN AUDIT TRAIL
 # ==========================================
 elif app_mode == "📁 Report History Dashboard":
-    st.header("📁 Saved Report History & User Audit Trail")
+    st.header("📁 Saved Report History & Local Audit Trail")
     st.write("Inspect your generated reports and view complete backend logs of user login sessions, settings, and high-similarity matches.")
     
     tab_my_reports, tab_audit_log, tab_deep_log = st.tabs(["My Saved Reports", "📊 User Activity & Settings Log", "🔍 Deep Dive (>50%) Log"])
@@ -753,91 +780,54 @@ elif app_mode == "📁 Report History Dashboard":
     with tab_audit_log:
         st.subheader("Plagiarism Checker Activity & Settings Audit Trail")
         st.write("Tracks who logged in, timestamps, files scanned, and the exact settings used.")
-        if supabase is not None:
-            try:
-                response = supabase.table("beta_user_activity").select("*").order("timestamp", desc=True).execute()
-                logs = response.data
-                if logs:
-                    df_logs = pd.DataFrame(logs)
-                    st.dataframe(df_logs, use_container_width=True)
-                    
-                    # --- RESTRICTED DOWNLOAD BUTTON FOR arunpeswani@gmail.com ONLY ---
-                    if user_email.lower() == "arunpeswani@gmail.com":
-                        csv_data = df_logs.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Download Plagiarism Activity Log (CSV)",
-                            data=csv_data,
-                            file_name="beta_user_activity_audit_trail.csv",
-                            mime="text/csv",
-                            key=f"dl_audit_csv_{rc}"
-                        )
-                else:
-                    st.info("No user activity logs recorded in Supabase yet.")
-            except Exception as ex:
-                st.warning("⚠️ Table `beta_user_activity` not found in Supabase.")
-        else:
-            st.info("💡 Supabase is not connected.")
-        
-        with st.expander("🛠️ SQL for Activity Table"):
-            st.code("""
-create table beta_user_activity (
-    id bigint generated by default as identity primary key,
-    user_email text,
-    user_name text,
-    timestamp text,
-    course text,
-    analysis_type text,
-    files_scanned int,
-    min_ngram_words int,
-    max_ngram_words int,
-    flagging_threshold int,
-    max_similarity numeric,
-    avg_similarity numeric,
-    flagged_pairs_count int
-);
-            """, language="sql")
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            df_logs = pd.read_sql_query("select * from beta_user_activity order by timestamp desc", conn)
+            conn.close()
+            
+            if not df_logs.empty:
+                st.dataframe(df_logs, use_container_width=True)
+                
+                # --- RESTRICTED DOWNLOAD BUTTON FOR arunpeswani@gmail.com ONLY ---
+                if user_email.lower() == "arunpeswani@gmail.com":
+                    csv_data = df_logs.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Plagiarism Activity Log (CSV)",
+                        data=csv_data,
+                        file_name="beta_user_activity_audit_trail.csv",
+                        mime="text/csv",
+                        key=f"dl_audit_csv_{rc}"
+                    )
+            else:
+                st.info("No user activity logs recorded yet.")
+        except Exception as ex:
+            st.warning(f"Could not load logs: {ex}")
 
     with tab_deep_log:
         st.subheader("Deep Dive Matcher (>50% Instances) Log")
         st.write("Tracks deep dive document comparisons and counts of text instances matching at 50% similarity or higher.")
-        if supabase is not None:
-            try:
-                response = supabase.table("beta_deep_dive_activity").select("*").order("timestamp", desc=True).execute()
-                logs = response.data
-                if logs:
-                    df_deep = pd.DataFrame(logs)
-                    st.dataframe(df_deep, use_container_width=True)
-                    
-                    # --- RESTRICTED DOWNLOAD BUTTON FOR arunpeswani@gmail.com ONLY ---
-                    if user_email.lower() == "arunpeswani@gmail.com":
-                        csv_deep = df_deep.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Download Deep Dive Activity Log (CSV)",
-                            data=csv_deep,
-                            file_name="beta_deep_dive_activity_log.csv",
-                            mime="text/csv",
-                            key=f"dl_deep_csv_{rc}"
-                        )
-                else:
-                    st.info("No deep dive logs recorded in Supabase yet.")
-            except Exception as ex:
-                st.warning("⚠️ Table `beta_deep_dive_activity` not found in Supabase.")
-        else:
-            st.info("💡 Supabase is not connected.")
-        
-        with st.expander("🛠️ SQL for Deep Dive Table"):
-            st.code("""
-create table beta_deep_dive_activity (
-    id bigint generated by default as identity primary key,
-    user_email text,
-    user_name text,
-    timestamp text,
-    doc_a_name text,
-    doc_b_name text,
-    high_match_count_over_50pct int,
-    top_matches_summary text
-);
-            """, language="sql")
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            df_deep = pd.read_sql_query("select * from beta_deep_dive_activity order by timestamp desc", conn)
+            conn.close()
+            
+            if not df_deep.empty:
+                st.dataframe(df_deep, use_container_width=True)
+                
+                # --- RESTRICTED DOWNLOAD BUTTON FOR arunpeswani@gmail.com ONLY ---
+                if user_email.lower() == "arunpeswani@gmail.com":
+                    csv_deep = df_deep.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Deep Dive Activity Log (CSV)",
+                        data=csv_deep,
+                        file_name="beta_deep_dive_activity_log.csv",
+                        mime="text/csv",
+                        key=f"dl_deep_csv_{rc}"
+                    )
+            else:
+                st.info("No deep dive logs recorded yet.")
+        except Exception as ex:
+            st.warning(f"Could not load deep dive logs: {ex}")
 
 # ==========================================
 # MODE 5: USER GUIDE & HELP
@@ -851,17 +841,15 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("1. What is APLens & What Does It Do?")
     st.write(
         "APLens is a specialized peer-to-peer plagiarism detection and document comparison web suite designed "
-        "for educators, instructors, and researchers. It allows you to analyze batches of student submissions "
-        "to find cross-document similarities, detect paraphrased cheating, and perform deep-dive text or spreadsheet matches."
+        "for educators, instructors, and researchers."
     )
 
     st.subheader("2. How It Works & Key Features")
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
-        "* **Gated Google Login:** Users must authenticate via Google before accessing any tools, guaranteeing complete audit logs of user identities.\n"
-        "* **Comprehensive Backend Activity Logging:** Automatically stores user emails, names, timestamps, settings used (min/max N-grams, flagging thresholds), files scanned, and similarity summaries in Supabase.\n"
-        "* **Deep Dive >50% Match Tracking:** Captures sentence-level pairs sharing 50% or more similarity during 2-document deep dive comparisons.\n"
-        "* **Global Smart Filtering:** Upload an assignment instructions file, prompt, or syllabus once in the sidebar to automatically strip out shared boilerplate text."
+        "* **Gated Google Login:** Users must authenticate via Google before accessing any tools.\n"
+        "* **Local SQLite Audit Logging:** Automatically stores user emails, names, timestamps, settings used, files scanned, and similarity summaries locally without needing any external cloud database configuration.\n"
+        "* **Deep Dive >50% Match Tracking:** Captures sentence-level pairs sharing 50% or more similarity."
     )
 
     st.subheader("3. Support, Contact & Feedback")
