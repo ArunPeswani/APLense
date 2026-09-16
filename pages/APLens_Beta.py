@@ -20,19 +20,7 @@ import pytesseract
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
-# Supabase Client Import (Kept in case needed by other DB features, though auth uses native st.user)
-from supabase import create_client, Client
-
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
-
-# --- INITIALIZE SUPABASE CLIENT ---
-@st.cache_resource
-def init_supabase() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_ANON_KEY"]
-    return create_client(url, key)
-
-supabase = init_supabase()
 
 # --- COMPACT SIDEBAR CSS & OFFICIAL GOOGLE LOGIN STYLING ---
 st.markdown("""
