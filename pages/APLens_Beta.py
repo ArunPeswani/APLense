@@ -60,6 +60,17 @@ def init_local_db():
             top_matches_summary text
         )
     """)
+    # Table for Cumulative Document Vault (LMS & Assignment History)
+    cursor.execute("""
+        create table if not exists course_document_vault (
+            id integer primary key autoincrement,
+            lms_number text,
+            assignment_name text,
+            filename text,
+            extracted_text text,
+            timestamp text
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -313,13 +324,32 @@ if reference_file:
 
 
 # ==========================================
-# MODE 1: PLAGIARISM CHECKER
+# MODE 1: PLAGIARISM CHECKER (WITH CUMULATIVE VAULT)
 # ==========================================
 if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
-    st.write("Upload multiple student submissions (including Word, PDF, Excel, Markdown, Scans/Images), a direct folder, or a ZIP archive below.")
+    st.write("Upload student submissions. Late submissions or new batches will automatically be compared against historical submissions stored for this LMS Number and Assignment.")
 
-    course_assignment_name = st.text_input("📚 Course Name / Assignment Title (Optional)", placeholder="e.g., CS101 - Final Capstone Project", key=f"course_beta_{rc}")
+    # Side-by-side inputs for LMS Number and Assignment Name
+    col_lms1, col_lms2 = st.columns(2)
+    with col_lms1:
+        lms_number_input = st.text_input("🏫 LMS Number", placeholder="e.g., 48921", key=f"lms_num_{rc}")
+    with col_lms2:
+        assignment_name_input = st.text_input("📝 Assignment Name", placeholder="e.g., Assignment A", key=f"assign_name_{rc}")
+
+    # Helper caption showing previously used LMS numbers and assignment names
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("select distinct lms_number, assignment_name from course_document_vault")
+        past_records = cursor.fetchall()
+        conn.close()
+        if past_records:
+            past_lms_list = sorted(list(set(r[0] for r in past_records if r[0])))
+            if past_lms_list:
+                st.caption(f"💡 Previously used LMS Numbers in Vault: {', '.join(past_lms_list)}")
+    except Exception:
+        pass
 
     upload_choice = st.radio(
         "Select Upload Type", 
@@ -376,46 +406,76 @@ if app_mode == "Plagiarism Checker":
             st.error(f"Could not read ZIP archive: {e}")
 
     if processed_files:
-        st.info(f"Loaded {len(processed_files)} file(s) successfully.")
+        st.info(f"Loaded {len(processed_files)} new file(s) successfully.")
         
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            run_standard = st.button("Run Plagiarism Analysis", type="primary", key=f"run_folder_analysis_{rc}")
+            run_standard = st.button("Run Cumulative Plagiarism Analysis", type="primary", key=f"run_folder_analysis_{rc}")
         with col_btn2:
-            run_paraphrase = st.button("🔍 Run Paraphrase Analysis", type="secondary", key=f"run_folder_paraphrase_{rc}")
+            run_paraphrase = st.button("🔍 Run Cumulative Paraphrase Analysis", type="secondary", key=f"run_folder_paraphrase_{rc}")
 
         if run_standard or run_paraphrase:
-            if len(processed_files) < 2:
-                st.error("Please upload at least 2 documents to perform a comparison.")
+            lms_val = lms_number_input.strip() or "General_LMS"
+            assign_val = assignment_name_input.strip() or "General_Assignment"
+            
+            analysis_mode_label = "Cumulative Paraphrased Plagiarism Analysis" if run_paraphrase else "Cumulative Standard Plagiarism Analysis"
+            
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            status_text.text("Retrieving historical submissions from document vault...")
+            progress_bar.progress(10)
+            
+            # --- FETCH HISTORICAL SUBMISSIONS FROM VAULT ---
+            historical_filenames = []
+            historical_texts = []
+            existing_filenames_set = set()
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                cursor.execute("select filename, extracted_text from course_document_vault where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
+                vault_rows = cursor.fetchall()
+                conn.close()
+                for r in vault_rows:
+                    f_name, f_text = r[0], r[1]
+                    historical_filenames.append(f"📁 [Past] {f_name}")
+                    historical_texts.append(f_text)
+                    existing_filenames_set.add(f_name)
+            except Exception:
+                pass
+
+            documents = list(historical_texts)
+            filenames = list(historical_filenames)
+            
+            status_text.text(f"Found {len(filenames)} historical submission(s) in vault. Processing new batch...")
+            progress_bar.progress(30)
+            
+            new_files_to_vault = []
+            total_to_process = len(processed_files)
+            
+            for idx, file in enumerate(processed_files):
+                status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active)")
+                progress_bar.progress(30 + int(40 * (idx + 1) / total_to_process))
+                
+                txt = extract_text_from_file_obj(file, file.name.lower())
+                
+                if global_reference_text.strip():
+                    prompt_words = set(global_reference_text.split())
+                    cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
+                    if len(cleaned_txt.strip()) > 3:
+                        txt = cleaned_txt
+                
+                documents.append(txt)
+                unique_name = f"🆕 [New] {file.name}"
+                filenames.append(unique_name)
+                
+                if file.name not in existing_filenames_set:
+                    new_files_to_vault.append((lms_val, assign_val, file.name, txt, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+
+            if len(documents) < 2:
+                st.error("Total comparison pool (historical + new) has fewer than 2 documents. Please upload at least 2 files or ensure past submissions exist.")
             else:
-                analysis_mode_label = "Paraphrased Plagiarism Analysis" if run_paraphrase else "Standard Plagiarism Analysis"
-                
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                status_text.text(f"Initializing {analysis_mode_label}...")
-                progress_bar.progress(10)
-                
-                documents, filenames = [], []
-                total_to_process = len(processed_files)
-                
-                for idx, file in enumerate(processed_files):
-                    status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active)")
-                    progress_bar.progress(10 + int(60 * (idx + 1) / total_to_process))
-                    
-                    txt = extract_text_from_file_obj(file, file.name.lower())
-                    
-                    if global_reference_text.strip():
-                        prompt_words = set(global_reference_text.split())
-                        cleaned_txt = " ".join([w for w in txt.split() if w not in prompt_words or len(prompt_words) < 5])
-                        if len(cleaned_txt.strip()) > 3:
-                            txt = cleaned_txt
-                    
-                    documents.append(txt)
-                    unique_name = f"{idx+1}. {file.name}"
-                    filenames.append(unique_name)
-                
-                status_text.text("Calculating similarity matrix across documents...")
+                status_text.text("Calculating cumulative similarity matrix across all documents...")
                 progress_bar.progress(85)
                 
                 n = len(documents)
@@ -442,6 +502,20 @@ if app_mode == "Plagiarism Checker":
                     tfidf_matrix = vectorizer.fit_transform(documents)
                     similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
                 
+                # --- SAVE NEW FILES INTO VAULT ---
+                if new_files_to_vault:
+                    try:
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        cursor.executemany("""
+                            insert into course_document_vault (lms_number, assignment_name, filename, extracted_text, timestamp)
+                            values (?, ?, ?, ?, ?)
+                        """, new_files_to_vault)
+                        conn.commit()
+                        conn.close()
+                    except Exception:
+                        pass
+
                 progress_bar.progress(100)
                 status_text.text("Analysis complete!")
                 
@@ -452,7 +526,7 @@ if app_mode == "Plagiarism Checker":
                 st.session_state.folder_filenames = filenames
                 st.session_state.folder_analyzed = True
                 st.session_state.analysis_type_run = analysis_mode_label
-                st.session_state.beta_course = course_assignment_name.strip() or "General Assignment"
+                st.session_state.beta_course = f"LMS: {lms_val} | Assignment: {assign_val}"
 
                 # Calculate metrics for logging
                 total_files = len(filenames)
@@ -514,7 +588,7 @@ if app_mode == "Plagiarism Checker":
 
         mcol1, mcol2, mcol3, mcol4 = st.columns(4)
         with mcol1:
-            st.metric("📁 Files Scanned", total_files)
+            st.metric("📁 Total Pool Files", total_files)
         with mcol2:
             st.metric("📈 Max Similarity", f"{max_sim:.1f}%")
         with mcol3:
@@ -565,7 +639,7 @@ if app_mode == "Plagiarism Checker":
         st.download_button(
             label="📥 Download Plagiarism Report (Excel)",
             data=processed_data,
-            file_name=f"plagiarism_report_{current_course.replace(' ', '_')}.xlsx",
+            file_name=f"plagiarism_report_{current_course.replace(' | ', '_').replace(': ', '_').replace(' ', '_')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_excel_report_{rc}"
         )
@@ -746,7 +820,6 @@ elif app_mode == "📁 Report History Dashboard":
     is_admin = user_email.lower() == "arunpeswani@gmail.com"
     
     if is_admin:
-        # Add a refresh button for the admin
         col_h1, col_h2 = st.columns([0.8, 0.2])
         with col_h2:
             if st.button("Fetch Reports", type="secondary", key=f"fetch_reports_btn_{rc}"):
@@ -782,7 +855,7 @@ elif app_mode == "📁 Report History Dashboard":
                     st.download_button(
                         label=f"📥 Download Report ({rep['timestamp']})",
                         data=h_output.getvalue(),
-                        file_name=f"history_report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
+                        file_name=f"history_report_{rep['course'].replace(' | ', '_').replace(': ', '_').replace(' ', '_')}_{idx}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key=f"hist_dl_{idx}_{rc}"
                     )
@@ -851,7 +924,8 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Gated Google Login:** Users must authenticate via Google before accessing any tools.\n"
-        "* **Local SQLite Audit Logging:** Automatically stores user emails, names, timestamps, settings used, files scanned, and similarity summaries locally without needing any external cloud database configuration.\n"
+        "* **Cumulative Document Vault:** Automatically indexes student submissions by LMS Number and Assignment Name in local SQLite, ensuring late submissions are checked against all past papers.\n"
+        "* **Local SQLite Audit Logging:** Automatically stores user emails, names, timestamps, settings used, files scanned, and similarity summaries locally.\n"
         "* **Deep Dive >50% Match Tracking:** Captures sentence-level pairs sharing 50% or more similarity."
     )
 
