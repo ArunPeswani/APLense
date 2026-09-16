@@ -10,11 +10,11 @@ user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", No
 if not user_avatar:
     user_avatar = "https://www.w3schools.com/howto/img_avatar.png"
 
-# --- CUSTOM CSS TO INJECT PROFILE IMAGE INTO THE POPOVER BUTTON ---
+# --- CUSTOM CSS TO FORCE PROFILE IMAGE ON THE POPOVER BUTTON ---
 if st.user.is_logged_in:
     st.markdown(f"""
         <style>
-            /* Target Streamlit's popover button and replace it with your Google profile image */
+            /* Style the popover button container into a clean circular avatar */
             [data-testid="stPopover"] > button {{
                 border-radius: 50% !important;
                 width: 42px !important;
@@ -24,7 +24,6 @@ if st.user.is_logged_in:
                 background-size: cover !important;
                 background-position: center !important;
                 border: 2px solid #dadce0 !important;
-                color: transparent !important; /* Hides default chevron/text */
                 float: right;
                 box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             }}
@@ -32,9 +31,8 @@ if st.user.is_logged_in:
                 border-color: #1a73e8 !important;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.15);
             }}
-            /* Hide any remaining inner text or icons inside the button */
-            [data-testid="stPopover"] > button p, 
-            [data-testid="stPopover"] > button svg {{
+            /* Hide all default internal Streamlit button text, spans, and chevron icons */
+            [data-testid="stPopover"] > button * {{
                 display: none !important;
             }}
         </style>
@@ -48,7 +46,7 @@ with header_col1:
 
 with header_col2:
     if st.user.is_logged_in:
-        # Render the Google-style Account Menu Dropover
+        # Render the Google-style Account Menu Dropdown
         with st.popover(""):
             st.markdown(f"""
                 <div style="text-align: center; padding: 10px 0px;">
