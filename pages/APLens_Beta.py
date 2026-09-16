@@ -20,7 +20,19 @@ import pytesseract
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
+# Supabase Client Import for Activity Logging
+from supabase import create_client, Client
+
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
+
+# --- INITIALIZE SUPABASE CLIENT FOR USER ACTIVITY LOGGING ---
+@st.cache_resource
+def init_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_ANON_KEY"]
+    return create_client(url, key)
+
+supabase = init_supabase()
 
 # --- COMPACT SIDEBAR CSS & CLEAN UPLOADER HELPER STYLING ---
 st.markdown("""
@@ -64,11 +76,6 @@ st.markdown("""
         .google-login-btn svg {
             width: 18px;
             height: 18px;
-        }
-
-        /* Hide the file extension list on the right side of the uploader button */
-        [data-testid="stFileUploader"] section small span {
-            display: none !important;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -428,9 +435,37 @@ if app_mode == "Plagiarism Checker":
                 st.session_state.analysis_type_run = analysis_mode_label
                 st.session_state.beta_course = course_assignment_name.strip() or "General Assignment"
 
+                # Calculate metrics for logging
+                total_files = len(filenames)
+                flat_scores = [similarity_matrix[i][j] for i in range(total_files) for j in range(total_files) if i != j]
+                max_sim = max(flat_scores) if flat_scores else 0.0
+                avg_sim = sum(flat_scores) / len(flat_scores) if flat_scores else 0.0
+                flagged_pairs_count = sum(1 for score in flat_scores if score >= similarity_threshold)
+                current_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                # --- LOG USER ACTIVITY TO SUPABASE ---
+                if user_is_logged_in:
+                    try:
+                        activity_payload = {
+                            "user_email": user_email,
+                            "user_name": user_name,
+                            "timestamp": current_timestamp,
+                            "course": st.session_state.beta_course,
+                            "analysis_type": analysis_mode_label,
+                            "files_scanned": total_files,
+                            "max_similarity": round(max_sim, 2),
+                            "avg_similarity": round(avg_sim, 2),
+                            "flagged_pairs_count": flagged_pairs_count,
+                            "threshold_used": similarity_threshold
+                        }
+                        supabase.table("beta_user_activity").insert(activity_payload).execute()
+                    except Exception as log_err:
+                        # Fallback if table doesn't exist yet or network error
+                        pass
+
                 if user_is_logged_in and save_reports_toggle:
                     st.session_state.saved_reports.append({
-                        "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "timestamp": current_timestamp,
                         "type": analysis_mode_label,
                         "course": st.session_state.beta_course,
                         "files_count": len(filenames),
@@ -915,44 +950,79 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
 # ==========================================
-# MODE 4: REPORT HISTORY DASHBOARD
+# MODE 4: REPORT HISTORY DASHBOARD (WITH ADMIN AUDIT TRAIL)
 # ==========================================
 elif app_mode == "📁 Report History Dashboard":
-    st.header("📁 Saved Report History Dashboard")
-    st.write("Review, inspect, and access previously generated reports within your active retention window.")
+    st.header("📁 Saved Report History & Activity Dashboard")
+    st.write("Review your generated reports, and view platform user activity logs.")
     
     if not user_is_logged_in:
-        st.warning("🔒 Please sign in using the top-right **Sign in with Google** button to view and manage your saved report history.")
+        st.warning("🔒 Please sign in using the top-right **Sign in with Google** button to view and manage your report history.")
     else:
-        if not st.session_state.saved_reports:
-            st.info("No reports saved yet. Run a Plagiarism Analysis with 'Save Generated Reports' enabled to populate your history.")
-        else:
-            col_dash1, col_dash2 = st.columns([0.8, 0.2])
-            with col_dash2:
-                if st.button("🗑️ Clear All History", type="secondary", key=f"clear_hist_btn_{rc}"):
-                    st.session_state.saved_reports = []
-                    st.rerun()
+        tab_my_reports, tab_audit_log = st.tabs(["My Saved Reports", "📊 Beta User Activity Audit Trail"])
+        
+        with tab_my_reports:
+            if not st.session_state.saved_reports:
+                st.info("No reports saved yet. Run a Plagiarism Analysis with 'Save Generated Reports' enabled to populate your history.")
+            else:
+                col_dash1, col_dash2 = st.columns([0.8, 0.2])
+                with col_dash2:
+                    if st.button("🗑️ Clear All History", type="secondary", key=f"clear_hist_btn_{rc}"):
+                        st.session_state.saved_reports = []
+                        st.rerun()
 
-            for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
-                with st.expander(f"📌 [{rep['timestamp']}] {rep['course']} — {rep['type']} ({rep['files_count']} files, Expires: {rep['expiry']})"):
-                    st.write(f"**Course/Assignment:** {rep['course']}")
-                    st.write(f"**Analysis Mode:** {rep['type']}")
-                    st.write(f"**Files Processed:** {rep['files_count']}")
-                    st.write(f"**Scheduled Expiry:** {rep['expiry']}")
-                    
-                    st.dataframe(rep['df'].style.format("{:.2f}%"))
-                    
-                    h_output = io.BytesIO()
-                    with pd.ExcelWriter(h_output, engine='openpyxl') as writer:
-                        rep['df'].to_excel(writer, sheet_name='Report History')
-                    
-                    st.download_button(
-                        label=f"📥 Download Report ({rep['timestamp']})",
-                        data=h_output.getvalue(),
-                        file_name=f"history_report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        key=f"hist_dl_{idx}_{rc}"
-                    )
+                for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
+                    with st.expander(f"📌 [{rep['timestamp']}] {rep['course']} — {rep['type']} ({rep['files_count']} files, Expires: {rep['expiry']})"):
+                        st.write(f"**Course/Assignment:** {rep['course']}")
+                        st.write(f"**Analysis Mode:** {rep['type']}")
+                        st.write(f"**Files Processed:** {rep['files_count']}")
+                        st.write(f"**Scheduled Expiry:** {rep['expiry']}")
+                        
+                        st.dataframe(rep['df'].style.format("{:.2f}%"))
+                        
+                        h_output = io.BytesIO()
+                        with pd.ExcelWriter(h_output, engine='openpyxl') as writer:
+                            rep['df'].to_excel(writer, sheet_name='Report History')
+                        
+                        st.download_button(
+                            label=f"📥 Download Report ({rep['timestamp']})",
+                            data=h_output.getvalue(),
+                            file_name=f"history_report_{rep['course'].replace(' ', '_')}_{idx}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"hist_dl_{idx}_{rc}"
+                        )
+        
+        with tab_audit_log:
+            st.subheader("Beta User Activity & Similarity Audit Trail")
+            st.write("This table tracks all scans performed by users on this beta page, including user identity, timestamps, file counts, and risk metrics.")
+            try:
+                # Fetch activity logs from Supabase
+                response = supabase.table("beta_user_activity").select("*").order("timestamp", desc=True).execute()
+                logs = response.data
+                if logs:
+                    df_logs = pd.DataFrame(logs)
+                    st.dataframe(df_logs, use_container_width=True)
+                else:
+                    st.info("No user activity logs recorded in Supabase yet. Run a scan while logged in to generate an entry.")
+            except Exception as ex:
+                st.warning("⚠️ Could not load activity logs from Supabase. Make sure the `beta_user_activity` table exists in your database.")
+                with st.expander("🛠️ SQL Setup Instructions for Supabase"):
+                    st.code("""
+-- Run this SQL command in your Supabase SQL Editor to create the audit table:
+create table beta_user_activity (
+    id bigint generated by default as identity primary key,
+    user_email text,
+    user_name text,
+    timestamp text,
+    course text,
+    analysis_type text,
+    files_scanned int,
+    max_similarity numeric,
+    avg_similarity numeric,
+    flagged_pairs_count int,
+    threshold_used int
+);
+                    """, language="sql")
 
 # ==========================================
 # MODE 5: USER GUIDE & HELP
@@ -981,7 +1051,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **Threshold Flagging & Metrics:** Set custom flagging thresholds in the sidebar to instantly highlight high-risk pairs, view summary metrics counters, and receive automated warning alerts.\n"
         "* **Proportionate Square Heatmap:** An interactive Plotly heatmap dynamically sizes into a proportionate square grid for large classes (e.g., 99 students) with native scrollbars and zoom tools.\n"
         "* **Deep Dive Matcher:** Upload two specific documents or multi-sheet Excel workbooks to perform sheet-by-sheet analysis, exact sentence matching, paragraph comparison, or paraphrase detection.\n"
-        "* **Beta Feature - Native Google OIDC Authentication:** Secure single-click sign-in via Google accounts with an intuitive profile menu.\n"
+        "* **Beta Feature - Native Google OIDC Authentication & Audit Logging:** Secure single-click sign-in via Google accounts, paired with automatic backend logging of user activity, files scanned, and similarity summaries.\n"
         "* **Beta Feature - Report History Dashboard:** Store reports temporarily in session state with configurable retention windows (1 day to 1 month)."
     )
 
@@ -994,7 +1064,7 @@ elif app_mode == "💡 User Guide & Help":
         "between the document in that row and the document in that column.\n"
         "* **The Diagonal (100%):** The cells running diagonally from top-left to bottom-right will always show **100%**, because a document "
         "is being compared against itself.\n"
-        "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
+        "* **Identifying Potential Plagiarism:** Look for high-similarity scores off the diagonal (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
         "means those two particular student submissions share substantial matching text sequences and warrant a closer manual review."
     )
 
