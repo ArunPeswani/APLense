@@ -10,12 +10,12 @@ user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", No
 if not user_avatar:
     user_avatar = "https://www.w3schools.com/howto/img_avatar.png"
 
-# --- CUSTOM CSS FOR FULLY ROUNDED PILL POPOVER BUTTON ---
+# --- CUSTOM CSS FOR DIRECT PILL BUTTON ---
 if not st.user.is_logged_in:
     st.markdown("""
         <style>
-            /* Force fully rounded pill shape on the sign-in popover button */
-            [data-testid="stPopover"] > button {
+            /* Style Streamlit's direct button into a clean pill-shaped button */
+            div.stButton > button {
                 border-radius: 24px !important;
                 border: 1px solid #dadce0 !important;
                 background-color: #ffffff !important;
@@ -23,14 +23,15 @@ if not st.user.is_logged_in:
                 font-family: 'Roboto', sans-serif !important;
                 font-weight: 500 !important;
                 font-size: 14px !important;
-                padding: 6px 22px !important;
+                padding: 6px 20px !important;
                 box-shadow: 0 1px 2px rgba(0,0,0,0.05);
                 float: right;
             }
-            [data-testid="stPopover"] > button:hover {
+            div.stButton > button:hover {
                 background-color: #f8f9fa !important;
                 border-color: #dadce0 !important;
                 box-shadow: 0 1px 3px rgba(60,64,67,0.2);
+                color: #202124 !important;
             }
         </style>
     """, unsafe_allow_html=True)
@@ -69,16 +70,9 @@ with header_col2:
                 if st.button("Sign Out", type="secondary", use_container_width=True):
                     st.logout()
     else:
-        # Logged Out State: Pill Button with clean authentication trigger
-        with st.popover("Sign in with Google"):
-            st.markdown("""
-                <div style="text-align: center; padding: 5px;">
-                    <p style="font-size: 13px; color: #5f6368; margin-bottom: 10px;">Proceed with your secure Google account:</p>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            if st.button("Authenticate with Google", type="primary", use_container_width=True):
-                st.login("google")
+        # Logged Out State: Direct Button that instantly triggers Google Login with no dropdown
+        if st.button("Sign in with Google"):
+            st.login("google")
 
 st.markdown("---")
 
