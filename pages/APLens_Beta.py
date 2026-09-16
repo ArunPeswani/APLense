@@ -66,17 +66,15 @@ st.markdown("""
             height: 18px;
         }
 
-        /* Hide the automatic file extension list string inside Streamlit file uploaders */
+        /* Cleanly override file uploader helper text to show only size info */
+        [data-testid="stFileUploader"] [data-testid="stMarkdownContainer"] p,
         [data-testid="stFileUploader"] section small {
-            visibility: hidden;
-            position: relative;
+            font-size: 0px !important;
         }
         [data-testid="stFileUploader"] section small::after {
             content: "Max 5MB per file";
-            visibility: visible;
-            position: absolute;
-            left: 0;
-            top: 0;
+            font-size: 12px !important;
+            color: #6c757d;
         }
     </style>
 """, unsafe_allow_html=True)
