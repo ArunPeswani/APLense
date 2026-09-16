@@ -330,11 +330,11 @@ def extract_text_from_file_obj(file_obj, filename_lower):
 
 
 # ==========================================
-# MODE 1: PLAGIARISM CHECKER (CUMULATIVE VAULT + PERSISTENT INSTRUCTIONS)
+# MODE 1: PLAGIARISM CHECKER (CONDITIONAL CUMULATIVE VAULT + PERSISTENT INSTRUCTIONS)
 # ==========================================
 if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
-    st.write("Upload student submissions. Late submissions or new batches will automatically be compared against historical submissions stored for this LMS Number and Assignment.")
+    st.write("Upload student submissions. If LMS Number and Assignment Name are provided, submissions will automatically be compared against historical submissions stored for that specific course and assignment.")
 
     # Side-by-side inputs for LMS Number and Assignment Name
     col_lms1, col_lms2 = st.columns(2)
@@ -343,27 +343,29 @@ if app_mode == "Plagiarism Checker":
     with col_lms2:
         assignment_name_input = st.text_input("📝 Assignment Name", placeholder="e.g., Assignment A", key=f"assign_name_{rc}")
 
-    lms_val = lms_number_input.strip() or "General_LMS"
-    assign_val = assignment_name_input.strip() or "General_Assignment"
+    lms_val = lms_number_input.strip()
+    assign_val = assignment_name_input.strip()
+    is_cumulative = bool(lms_val and assign_val)
 
     # --- HANDLE PERSISTENT ASSIGNMENT INSTRUCTIONS / SYLLABUS ---
     global_reference_text = ""
     if reference_file:
         global_reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
-        try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("delete from course_metadata where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
-            cursor.execute("""
-                insert into course_metadata (lms_number, assignment_name, reference_text, timestamp)
-                values (?, ?, ?, ?)
-            """, (lms_val, assign_val, global_reference_text, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            conn.commit()
-            conn.close()
-            st.success("📌 Instructions file uploaded and saved to vault for future runs under this LMS and Assignment!")
-        except Exception:
-            pass
-    else:
+        if is_cumulative:
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                cursor.execute("delete from course_metadata where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
+                cursor.execute("""
+                    insert into course_metadata (lms_number, assignment_name, reference_text, timestamp)
+                    values (?, ?, ?, ?)
+                """, (lms_val, assign_val, global_reference_text, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                conn.commit()
+                conn.close()
+                st.success("📌 Instructions file uploaded and saved to vault for future runs under this LMS and Assignment!")
+            except Exception:
+                pass
+    elif is_cumulative:
         try:
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
@@ -445,45 +447,47 @@ if app_mode == "Plagiarism Checker":
             st.error(f"Could not read ZIP archive: {e}")
 
     if processed_files:
-        st.info(f"Loaded {len(processed_files)} new file(s) successfully.")
+        st.info(f"Loaded {len(processed_files)} file(s) successfully.")
         
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            run_standard = st.button("Run Cumulative Plagiarism Analysis", type="primary", key=f"run_folder_analysis_{rc}")
+            run_standard = st.button("Run Plagiarism Analysis", type="primary", key=f"run_folder_analysis_{rc}")
         with col_btn2:
-            run_paraphrase = st.button("🔍 Run Cumulative Paraphrase Analysis", type="secondary", key=f"run_folder_paraphrase_{rc}")
+            run_paraphrase = st.button("🔍 Run Paraphrase Analysis", type="secondary", key=f"run_folder_paraphrase_{rc}")
 
         if run_standard or run_paraphrase:
-            analysis_mode_label = "Cumulative Paraphrased Plagiarism Analysis" if run_paraphrase else "Cumulative Standard Plagiarism Analysis"
+            analysis_mode_label = ("Cumulative Paraphrased Plagiarism Analysis" if is_cumulative else "Paraphrased Plagiarism Analysis") if run_paraphrase else ("Cumulative Standard Plagiarism Analysis" if is_cumulative else "Standard Plagiarism Analysis")
             
             progress_bar = st.progress(0)
             status_text = st.empty()
             
-            status_text.text("Retrieving historical submissions from document vault...")
+            status_text.text("Initializing analysis...")
             progress_bar.progress(10)
             
-            # --- FETCH HISTORICAL SUBMISSIONS FROM VAULT ---
             historical_filenames = []
             historical_texts = []
             existing_filenames_set = set()
-            try:
-                conn = sqlite3.connect(DB_FILE)
-                cursor = conn.cursor()
-                cursor.execute("select filename, extracted_text from course_document_vault where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
-                vault_rows = cursor.fetchall()
-                conn.close()
-                for r in vault_rows:
-                    f_name, f_text = r[0], r[1]
-                    historical_filenames.append(f"📁 [Past] {f_name}")
-                    historical_texts.append(f_text)
-                    existing_filenames_set.add(f_name)
-            except Exception:
-                pass
+            
+            if is_cumulative:
+                status_text.text("Retrieving historical submissions from document vault...")
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute("select filename, extracted_text from course_document_vault where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
+                    vault_rows = cursor.fetchall()
+                    conn.close()
+                    for r in vault_rows:
+                        f_name, f_text = r[0], r[1]
+                        historical_filenames.append(f"📁 [Past] {f_name}")
+                        historical_texts.append(f_text)
+                        existing_filenames_set.add(f_name)
+                except Exception:
+                    pass
 
             documents = list(historical_texts)
             filenames = list(historical_filenames)
             
-            status_text.text(f"Found {len(filenames)} historical submission(s) in vault. Processing new batch...")
+            status_text.text(f"Processing student submission files...")
             progress_bar.progress(30)
             
             new_files_to_vault = []
@@ -502,16 +506,16 @@ if app_mode == "Plagiarism Checker":
                         txt = cleaned_txt
                 
                 documents.append(txt)
-                unique_name = f"🆕 [New] {file.name}"
+                unique_name = f"🆕 [New] {file.name}" if is_cumulative else f"{idx+1}. {file.name}"
                 filenames.append(unique_name)
                 
-                if file.name not in existing_filenames_set:
+                if is_cumulative and file.name not in existing_filenames_set:
                     new_files_to_vault.append((lms_val, assign_val, file.name, txt, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
             if len(documents) < 2:
-                st.error("Total comparison pool (historical + new) has fewer than 2 documents. Please upload at least 2 files or ensure past submissions exist.")
+                st.error("Total comparison pool has fewer than 2 documents. Please upload at least 2 files.")
             else:
-                status_text.text("Calculating cumulative similarity matrix across all documents...")
+                status_text.text("Calculating similarity matrix across documents...")
                 progress_bar.progress(85)
                 
                 n = len(documents)
@@ -538,8 +542,8 @@ if app_mode == "Plagiarism Checker":
                     tfidf_matrix = vectorizer.fit_transform(documents)
                     similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
                 
-                # --- SAVE NEW FILES INTO VAULT ---
-                if new_files_to_vault:
+                # --- SAVE NEW FILES INTO VAULT IF CUMULATIVE ---
+                if is_cumulative and new_files_to_vault:
                     try:
                         conn = sqlite3.connect(DB_FILE)
                         cursor = conn.cursor()
@@ -562,7 +566,7 @@ if app_mode == "Plagiarism Checker":
                 st.session_state.folder_filenames = filenames
                 st.session_state.folder_analyzed = True
                 st.session_state.analysis_type_run = analysis_mode_label
-                st.session_state.beta_course = f"LMS: {lms_val} | Assignment: {assign_val}"
+                st.session_state.beta_course = f"LMS: {lms_val} | Assignment: {assign_val}" if is_cumulative else (assign_val or "General Assignment")
 
                 # Calculate metrics for logging
                 total_files = len(filenames)
@@ -624,7 +628,7 @@ if app_mode == "Plagiarism Checker":
 
         mcol1, mcol2, mcol3, mcol4 = st.columns(4)
         with mcol1:
-            st.metric("📁 Total Pool Files", total_files)
+            st.metric("📁 Files Scanned", total_files)
         with mcol2:
             st.metric("📈 Max Similarity", f"{max_sim:.1f}%")
         with mcol3:
@@ -738,7 +742,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 images = convert_from_bytes(pdf_bytes)
                 for img in images:
                     img_gray = img.convert('L')
-                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.5)
                     full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
         elif ext in ('.txt', '.rtf', '.md'):
@@ -760,7 +764,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
         elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
             image = Image.open(file_path).convert('L')
-            image = ImageEnhance.Contrast(image).enhance(2.0)
+            image = ImageEnhance.Contrast(image).enhance(2.5)
             full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
         
@@ -976,17 +980,16 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("3. Handling Staggered & Late Submissions (Cumulative Vault)")
     st.write(
         "Graders often check initial submissions before the due date, followed by trickle-in submissions as students submit late. APLens handles this seamlessly via a local database vault:\n"
-        "* **First Batch Run:** When you grade your initial submissions (e.g., 10 files) and run the analysis, the app checks them against each other and automatically saves their extracted text into the secure vault for that specific LMS number and assignment.\n"
-        "* **Later Batches (Late Submissions):** When you receive subsequent submissions (e.g., 40 new files or trickle-in papers), enter the **exact same LMS Number and Assignment Name** and upload the new files.\n"
-        "* **Automatic Cross-Checking:** The app will automatically fetch the past submissions out of the vault, compare the new batch against those historical papers, and then add the new papers into the vault so they are included in all future runs!"
+        "* **Conditional Cumulative Trigger:** Cumulative checking **only** runs if **both** the LMS Number and Assignment Name fields are filled out. If left blank, comparisons are treated as standard standalone runs.\n"
+        "* **First Batch Run:** When you grade initial submissions and provide the LMS and assignment codes, the app checks them and automatically saves their extracted text into the secure vault.\n"
+        "* **Later Batches (Late Submissions):** When you receive subsequent submissions, enter the **exact same LMS Number and Assignment Name** and upload the new files. The app will automatically fetch past submissions out of the vault and compare the new batch against historical papers."
     )
 
     st.subheader("4. Persistent Assignment Instructions & Syllabus Filtering")
     st.write(
         "* **Avoiding False Positives:** Student papers often contain shared boilerplate text from the assignment prompt or syllabus.\n"
-        "* **How to use it:** Upload your instruction file in the sidebar under **Global Smart Filtering** during *any* run (first batch or later).\n"
-        "* **Permanent Storage:** APLens will automatically save those instructions to the database for that LMS number and assignment.\n"
-        "* **Auto-Loading:** In future runs or when grading late submissions, you do not need to re-upload the instructions file. The app will automatically detect your LMS/Assignment combination and pull the saved instructions out of the vault to strip out boilerplate text automatically."
+        "* **How to use it:** Upload your instruction file in the sidebar under **Global Smart Filtering** when cumulative mode (LMS + Assignment) is active.\n"
+        "* **Permanent Storage & Auto-Loading:** APLens automatically saves those instructions to the database. In future runs for the same LMS/Assignment, the app automatically pulls the saved instructions out of the vault."
     )
 
     st.subheader("5. Deep Dive Matcher & Report History Dashboard")
