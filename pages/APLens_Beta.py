@@ -97,6 +97,20 @@ if "saved_reports" not in st.session_state:
 
 rc = st.session_state.reset_count_beta
 
+# --- HANDLE OAUTH TOKENS & HASH FRAGMENTS ---
+st.markdown("""
+    <script>
+        if (window.location.hash && window.location.hash.includes('access_token')) {
+            const hashParams = new URLSearchParams(window.location.hash.substring(1));
+            const accessToken = hashParams.get('access_token');
+            if (accessToken) {
+                const newUrl = window.location.pathname + '?access_token=' + accessToken;
+                window.location.replace(newUrl);
+            }
+        }
+    </script>
+""", unsafe_allow_html=True)
+
 # Handle OAuth redirect tokens & user session persistence
 query_params = st.query_params
 
