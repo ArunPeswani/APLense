@@ -71,6 +71,16 @@ def init_local_db():
             timestamp text
         )
     """)
+    # Table for Persistent Assignment Reference Instructions / Syllabus Vault
+    cursor.execute("""
+        create table if not exists course_metadata (
+            id integer primary key autoincrement,
+            lms_number text,
+            assignment_name text,
+            reference_text text,
+            timestamp text
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -237,7 +247,7 @@ reference_file = st.sidebar.file_uploader(
     type=list(supported_exts),
     key=f"global_ref_file_{rc}",
     max_upload_size=5,
-    help="Upload the assignment prompt or reference file once (Max 5MB). It will be applied across analysis modes!"
+    help="Upload the assignment prompt or reference file once (Max 5MB). It will be saved and applied across future runs automatically!"
 )
 
 st.sidebar.markdown("---")
@@ -318,13 +328,9 @@ def extract_text_from_file_obj(file_obj, filename_lower):
         text = f"document_content_fallback_{filename_lower}"
     return text
 
-global_reference_text = ""
-if reference_file:
-    global_reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
-
 
 # ==========================================
-# MODE 1: PLAGIARISM CHECKER (WITH CUMULATIVE VAULT)
+# MODE 1: PLAGIARISM CHECKER (CUMULATIVE VAULT + PERSISTENT INSTRUCTIONS)
 # ==========================================
 if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
@@ -336,6 +342,41 @@ if app_mode == "Plagiarism Checker":
         lms_number_input = st.text_input("🏫 LMS Number", placeholder="e.g., 48921", key=f"lms_num_{rc}")
     with col_lms2:
         assignment_name_input = st.text_input("📝 Assignment Name", placeholder="e.g., Assignment A", key=f"assign_name_{rc}")
+
+    lms_val = lms_number_input.strip() or "General_LMS"
+    assign_val = assignment_name_input.strip() or "General_Assignment"
+
+    # --- HANDLE PERSISTENT ASSIGNMENT INSTRUCTIONS / SYLLABUS ---
+    global_reference_text = ""
+    if reference_file:
+        global_reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
+        # Save or update instructions in SQLite vault for this LMS & Assignment
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("delete from course_metadata where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
+            cursor.execute("""
+                insert into course_metadata (lms_number, assignment_name, reference_text, timestamp)
+                values (?, ?, ?, ?)
+            """, (lms_val, assign_val, global_reference_text, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit()
+            conn.close()
+            st.success("📌 Instructions file uploaded and saved to vault for future runs under this LMS and Assignment!")
+        except Exception:
+            pass
+    else:
+        # Check if instructions are already saved in vault for this LMS & Assignment
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            cursor = conn.cursor()
+            cursor.execute("select reference_text from course_metadata where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
+            row = cursor.fetchone()
+            conn.close()
+            if row and row[0]:
+                global_reference_text = row[0]
+                st.info(f"💡 Automatically loaded saved assignment instructions/syllabus from vault for LMS: **{lms_val}** | Assignment: **{assign_val}**")
+        except Exception:
+            pass
 
     # Helper caption showing previously used LMS numbers and assignment names
     try:
@@ -415,9 +456,6 @@ if app_mode == "Plagiarism Checker":
             run_paraphrase = st.button("🔍 Run Cumulative Paraphrase Analysis", type="secondary", key=f"run_folder_paraphrase_{rc}")
 
         if run_standard or run_paraphrase:
-            lms_val = lms_number_input.strip() or "General_LMS"
-            assign_val = assignment_name_input.strip() or "General_Assignment"
-            
             analysis_mode_label = "Cumulative Paraphrased Plagiarism Analysis" if run_paraphrase else "Cumulative Standard Plagiarism Analysis"
             
             progress_bar = st.progress(0)
@@ -651,8 +689,18 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
     st.header("Deep Dive Matcher")
     st.write("Compare two specific documents or spreadsheets sheet-by-sheet to extract exact matching sentences or true paragraphs.")
     
-    if global_reference_text:
-        st.info("💡 Global Smart Filtering is active: Assignment prompt/reference text will be automatically filtered out during matching.")
+    # Global ref text fallback for deep dive as well
+    global_ref_deep = ""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("select reference_text from course_metadata order by id desc limit 1")
+        row = cursor.fetchone()
+        conn.close()
+        if row and row[0]:
+            global_ref_deep = row[0]
+    except Exception:
+        pass
 
     col1, col2 = st.columns(2)
     with col1:
@@ -751,8 +799,8 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
             path2 = get_file_bytes_temp(file2)
             
             try:
-                units1 = list(get_document_lines_and_sentences(path1, global_reference_text))
-                units2 = list(get_document_lines_and_sentences(path2, global_reference_text))
+                units1 = list(get_document_lines_and_sentences(path1, global_ref_deep))
+                units2 = list(get_document_lines_and_sentences(path2, global_ref_deep))
                 
                 high_match_instances = []
                 for u1 in units1:
@@ -924,7 +972,7 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "APLens offers multiple advanced analysis modes and features:\n\n"
         "* **Gated Google Login:** Users must authenticate via Google before accessing any tools.\n"
-        "* **Cumulative Document Vault:** Automatically indexes student submissions by LMS Number and Assignment Name in local SQLite, ensuring late submissions are checked against all past papers.\n"
+        "* **Cumulative Document Vault & Persistent Syllabus:** Automatically indexes student submissions and assignment instructions/syllabus by LMS Number and Assignment Name in local SQLite, ensuring late submissions and future runs automatically reuse reference instructions and check against past papers.\n"
         "* **Local SQLite Audit Logging:** Automatically stores user emails, names, timestamps, settings used, files scanned, and similarity summaries locally.\n"
         "* **Deep Dive >50% Match Tracking:** Captures sentence-level pairs sharing 50% or more similarity."
     )
