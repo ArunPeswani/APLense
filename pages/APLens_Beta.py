@@ -194,8 +194,10 @@ with header_col2:
                 st.caption("Authenticate instantly via Supabase OAuth providers:")
                 try:
                     project_url = st.secrets["SUPABASE_URL"]
-                    google_url = f"{project_url}/auth/v1/authorize?provider=google&prompt=select_account"
-                    github_url = f"{project_url}/auth/v1/authorize?provider=github"
+                    # Added redirectTo parameter to ensure users return directly to the beta page
+                    redirect_target = "https://aplens.streamlit.app/APLens_Beta"
+                    google_url = f"{project_url}/auth/v1/authorize?provider=google&prompt=select_account&redirect_to={redirect_target}"
+                    github_url = f"{project_url}/auth/v1/authorize?provider=github&redirect_to={redirect_target}"
                     
                     st.markdown(f"""
                         <div class="login-container">
