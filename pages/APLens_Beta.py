@@ -743,10 +743,15 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 elif app_mode == "📁 Report History Dashboard":
     st.header("📁 Saved Report History Dashboard")
     
-    # Check if the logged-in user is Arun
     is_admin = user_email.lower() == "arunpeswani@gmail.com"
     
     if is_admin:
+        # Add a refresh button for the admin
+        col_h1, col_h2 = st.columns([0.8, 0.2])
+        with col_h2:
+            if st.button("🔄 Fetch Latest Reports", type="secondary", key=f"fetch_reports_btn_{rc}"):
+                st.rerun()
+                
         tab_my_reports, tab_audit_log, tab_deep_log = st.tabs(["My Saved Reports", "📊 User Activity & Settings Log", "🔍 Deep Dive (>50%) Log"])
     else:
         tab_my_reports, = st.tabs(["My Saved Reports"])
@@ -782,7 +787,6 @@ elif app_mode == "📁 Report History Dashboard":
                         key=f"hist_dl_{idx}_{rc}"
                     )
     
-    # These admin tabs will now ONLY render if logged in as arunpeswani@gmail.com
     if is_admin:
         with tab_audit_log:
             st.subheader("Plagiarism Checker Activity & Settings Audit Trail")
