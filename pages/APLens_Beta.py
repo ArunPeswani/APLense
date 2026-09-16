@@ -302,7 +302,7 @@ if app_mode == "Plagiarism Checker":
 
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif, .heic, .heif, .webp) - Max 5MB per file",
+            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif, .heic, .heif, .webp)",
             type=list(supported_exts),
             accept_multiple_files=True,
             max_upload_size=5,
