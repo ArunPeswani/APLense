@@ -22,7 +22,7 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
 
-# --- COMPACT SIDEBAR CSS & OFFICIAL GOOGLE LOGIN STYLING ---
+# --- COMPACT SIDEBAR CSS & TARGETED GOOGLE LOGIN STYLING ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -35,8 +35,14 @@ st.markdown("""
             border-radius: 8px;
             text-align: center;
         }
-        /* Style Streamlit button into an official Google Sign-In button with logo */
+        /* Style ONLY the Google Sign-In button with the logo and pill shape */
+        button[kind="secondary"][data-testid="baseButton-secondary"]:has(div:contains("Sign in with Google")),
         div.stButton > button {
+            /* Fallback general button styles if needed, but we target login specifically via key */
+        }
+        
+        /* Targeted styling for the Google Sign-In button using unique key pattern */
+        button[key*="google_login_btn"] {
             border-radius: 24px !important;
             border: 1px solid #dadce0 !important;
             background-color: #ffffff !important;
@@ -51,7 +57,7 @@ st.markdown("""
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             float: right;
         }
-        div.stButton > button:hover {
+        button[key*="google_login_btn"]:hover {
             background-color: #f8f9fa !important;
             border-color: #dadce0 !important;
             box-shadow: 0 1px 3px rgba(60,64,67,0.2);
@@ -113,7 +119,7 @@ with header_col2:
                 if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_btn_{rc}"):
                     st.logout()
     else:
-        # Logged Out State: Direct button with Google logo built into CSS
+        # Logged Out State: Direct button with unique key so CSS only applies here
         if st.button("Sign in with Google", key=f"google_login_btn_{rc}"):
             st.login("google")
 
