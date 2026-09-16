@@ -85,6 +85,19 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# --- SESSION STATE INITIALIZATION ---
+if "reset_count_beta" not in st.session_state:
+    st.session_state.reset_count_beta = 0
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "user_email" not in st.session_state:
+    st.session_state.user_email = ""
+if "saved_reports" not in st.session_state:
+    st.session_state.saved_reports = []
+
+# Assign rc so form keys and buttons can access it
+rc = st.session_state.reset_count_beta
+
 # --- HANDLE SUPABASE PKCE OAUTH CALLBACK (NO JAVASCRIPT NEEDED) ---
 query_params = st.query_params
 
