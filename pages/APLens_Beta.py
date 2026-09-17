@@ -32,7 +32,6 @@ DB_FILE = "aplens_audit.db"
 def init_local_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    # Table for Plagiarism Checker Activity & Settings
     cursor.execute("""
         create table if not exists beta_user_activity (
             id integer primary key autoincrement,
@@ -50,7 +49,6 @@ def init_local_db():
             flagged_pairs_count int
         )
     """)
-    # Table for Deep Dive Matcher (>50% Match Instances)
     cursor.execute("""
         create table if not exists beta_deep_dive_activity (
             id integer primary key autoincrement,
@@ -63,7 +61,6 @@ def init_local_db():
             top_matches_summary text
         )
     """)
-    # Table for Cumulative Document Vault (LMS & Assignment History)
     cursor.execute("""
         create table if not exists course_document_vault (
             id integer primary key autoincrement,
@@ -74,7 +71,6 @@ def init_local_db():
             timestamp text
         )
     """)
-    # Table for Persistent Assignment Reference Instructions / Syllabus Vault
     cursor.execute("""
         create table if not exists course_metadata (
             id integer primary key autoincrement,
@@ -84,7 +80,6 @@ def init_local_db():
             timestamp text
         )
     """)
-    # Table for Secure Grader API Key Vault (BYOK Pattern)
     cursor.execute("""
         create table if not exists grader_api_keys (
             email text primary key,
@@ -92,7 +87,6 @@ def init_local_db():
             updated_at text
         )
     """)
-    # Table for Cumulative AI Grading Vault & Reports
     cursor.execute("""
         create table if not exists ai_grades_vault (
             id integer primary key autoincrement,
@@ -105,14 +99,12 @@ def init_local_db():
             expiry_date text
         )
     """)
-    # Table for Whitelisted Authorized Users
     cursor.execute("""
         create table if not exists authorized_users (
             email text primary key,
             approved_at text
         )
     """)
-    # Table for Pending Access Requests
     cursor.execute("""
         create table if not exists access_requests (
             id integer primary key autoincrement,
@@ -122,17 +114,13 @@ def init_local_db():
             timestamp text
         )
     """)
-    
-    # Ensure super-admin arunpeswani@gmail.com is always authorized
     cursor.execute("insert or ignore into authorized_users (email, approved_at) values (?, ?)", 
                    ("arunpeswani@gmail.com", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    
     conn.commit()
     conn.close()
 
 init_local_db()
 
-# --- COMPACT SIDEBAR CSS & CLEAN UPLOADER HELPER STYLING ---
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
@@ -145,8 +133,6 @@ st.markdown("""
             border-radius: 8px;
             text-align: center;
         }
-        
-        /* Official Google Sign-In Button Styling */
         .google-login-btn {
             display: inline-flex;
             align-items: center;
@@ -177,7 +163,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- SESSION STATE INITIALIZATION ---
 if "reset_count_beta" not in st.session_state:
     st.session_state.reset_count_beta = 0
 if "saved_reports" not in st.session_state:
@@ -187,7 +172,6 @@ if "edit_email_toggled" not in st.session_state:
 
 rc = st.session_state.reset_count_beta
 
-# --- SAFE USER DATA EXTRACTION ---
 user_is_logged_in = getattr(st.user, "is_logged_in", False)
 user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
 user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
@@ -199,13 +183,9 @@ if not user_avatar:
 if "action" in st.query_params and st.query_params["action"] == "login":
     st.login("google")
 
-# ==========================================
-# GATED LOGIN CHECK & AUTHORIZATION GATE
-# ==========================================
 if not user_is_logged_in:
     st.title("🧪 APLens Beta - Plagiarism & AI Grader Suite")
     st.markdown("---")
-    
     st.info("🔒 **Authentication Required:** Please sign in with your approved Google account to access the APLens Beta suite.")
     
     col_login1, col_login2 = st.columns([1, 1])
@@ -223,10 +203,8 @@ if not user_is_logged_in:
                 </a>
             </div>
         """, unsafe_allow_html=True)
-    
     st.stop()
 
-# --- CHECK IF LOGGED-IN USER IS AUTHORIZED ---
 def is_user_authorized(email):
     if email.lower() == "arunpeswani@gmail.com":
         return True
@@ -244,7 +222,6 @@ if not is_user_authorized(user_email):
     st.title("🧪 APLens Beta - Access Approval Required")
     st.markdown("---")
     
-    # Check if user already submitted a request
     existing_request = False
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -266,7 +243,6 @@ if not is_user_authorized(user_email):
     with st.form(key=f"access_request_form_{rc}"):
         req_name = st.text_input("Full Name", value=user_name)
         
-        # Email field with toggle option via pencil icon
         col_email_lbl, col_email_btn = st.columns([0.9, 0.1])
         with col_email_lbl:
             st.markdown("**Email ID**")
@@ -310,14 +286,9 @@ if not is_user_authorized(user_email):
                 time.sleep(2)
                 st.rerun()
             except Exception as ex:
-                st.error(f"An access request for this email has already been submitted.")
+                st.error("An access request for this email has already been submitted.")
 
     st.stop()
-
-
-# ==========================================
-# FULL APPLICATION ACCESSIBLE AFTER AUTHORIZATION
-# ==========================================
 
 header_col1, header_col2 = st.columns([0.6, 0.4])
 
@@ -346,7 +317,6 @@ with header_col2:
             if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_btn_{rc}"):
                 st.logout()
 
-# --- RETRIEVE OR SAVE PERSONAL GEMINI API KEY (BYOK) ---
 def get_user_api_key(email):
     try:
         conn = sqlite3.connect(DB_FILE)
@@ -369,24 +339,15 @@ def save_user_api_key(email, key):
     except Exception:
         pass
 
-# ==========================================
-# SIDEBAR SETUP
-# ==========================================
 nav_options = ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "🤖 AI Grader & Rubric Evaluation", "📁 Report History Dashboard", "💡 User Guide & Help"]
 
-# Add Access Management tab exclusively for admin arunpeswani@gmail.com
 is_admin = user_email.lower() == "arunpeswani@gmail.com"
 if is_admin:
     nav_options.insert(4, "🔐 Access Requests Management")
 
-app_mode = st.sidebar.radio(
-    "Navigation", 
-    nav_options, 
-    key=f"nav_mode_{rc}"
-)
+app_mode = st.sidebar.radio("Navigation", nav_options, key=f"nav_mode_{rc}")
 
 st.sidebar.markdown("---")
-
 st.sidebar.subheader("🔑 AI Grader API Key (BYOK)")
 stored_key = get_user_api_key(user_email)
 user_gemini_key = st.sidebar.text_input("Google AI Studio API Key", value=stored_key, type="default", autocomplete="off", key=f"user_gemini_key_{rc}", help="Enter your free Google AI Studio key once. It is securely saved for your account.")
@@ -395,14 +356,12 @@ if user_gemini_key != stored_key:
     st.sidebar.success("API key saved securely!")
 
 st.sidebar.markdown("---")
-
 st.sidebar.subheader("Analysis Settings")
 min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key=f"min_words_{rc}")
 max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key=f"max_words_{rc}")
 similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_value=10, max_value=100, value=40, step=5, key=f"sim_threshold_{rc}", help="Pairs exceeding this similarity percentage will be flagged as high risk.")
 
 st.sidebar.markdown("---")
-
 st.sidebar.subheader("Report History Settings")
 save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_toggle_{rc}")
 retention_intervals = ["60 days", "1 day", "1 week", "10 days", "A Fortnight", "3 weeks", "A Month", "90 days"]
@@ -414,7 +373,6 @@ expiry_date = (datetime.datetime.now() + datetime.timedelta(days=expiry_days)).s
 st.sidebar.caption(f"📅 Calculated auto-deletion date: **{expiry_date}**")
 
 st.sidebar.markdown("---")
-
 supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif", "heic", "heif", "webp")
 
 st.sidebar.subheader("Global Smart Filtering")
@@ -427,7 +385,6 @@ reference_file = st.sidebar.file_uploader(
 )
 
 st.sidebar.markdown("---")
-
 if st.sidebar.button("🔄 Reset Everything", type="secondary", key=f"reset_all_btn_{rc}"):
     st.session_state.reset_count_beta += 1
     keys_to_clear = [k for k in list(st.session_state.keys()) if k not in ["reset_count_beta", "saved_reports", "edit_email_toggled"]]
@@ -436,7 +393,6 @@ if st.sidebar.button("🔄 Reset Everything", type="secondary", key=f"reset_all_
     st.rerun()
 
 st.sidebar.markdown("---")
-
 with st.sidebar.expander("🔒 Data Privacy & Security"):
     st.write(
         "**Are my files secure?**\n\n"
@@ -508,7 +464,6 @@ def extract_text_and_images_from_file(file_obj, filename_lower):
         text = f"document_content_fallback_{filename_lower}"
     return text, images_list
 
-
 # ==========================================
 # MODE 1: PLAGIARISM CHECKER
 # ==========================================
@@ -569,11 +524,7 @@ if app_mode == "Plagiarism Checker":
     except Exception:
         pass
 
-    upload_choice = st.radio(
-        "Select Upload Type", 
-        ["Individual Files", "Direct Folder Selection", "ZIP Archive (.zip)"], 
-        key=f"folder_upload_choice_{rc}"
-    )
+    upload_choice = st.radio("Select Upload Type", ["Individual Files", "Direct Folder Selection", "ZIP Archive (.zip)"], key=f"folder_upload_choice_{rc}")
 
     raw_uploaded_files = []
     directory_uploaded_files = []
@@ -581,7 +532,7 @@ if app_mode == "Plagiarism Checker":
 
     if upload_choice == "Individual Files":
         raw_uploaded_files = st.file_uploader(
-            "Upload Student Submission Documents (.docx, .pdf, .txt, .rtf, .md, .xlsx, .xls, .png, .jpg, .jpeg, .tiff, .tif, .heic, .heif, .webp)",
+            "Upload Student Submission Documents",
             type=list(supported_exts),
             accept_multiple_files=True,
             max_upload_size=5,
@@ -597,7 +548,7 @@ if app_mode == "Plagiarism Checker":
         )
     else:
         zip_uploaded_file = st.file_uploader(
-            "Upload ZIP Folder Archive containing student submissions (Allows up to 100MB for batch archives)",
+            "Upload ZIP Folder Archive containing student submissions",
             type=["zip"],
             max_upload_size=100,
             key=f"folder_zip_file_{rc}"
@@ -637,7 +588,6 @@ if app_mode == "Plagiarism Checker":
             
             progress_bar = st.progress(0)
             status_text = st.empty()
-            
             status_text.text("Initializing analysis...")
             progress_bar.progress(10)
             
@@ -664,7 +614,7 @@ if app_mode == "Plagiarism Checker":
             documents = list(historical_texts)
             filenames = list(historical_filenames)
             
-            status_text.text(f"Processing student submission files...")
+            status_text.text("Processing student submission files...")
             progress_bar.progress(30)
             
             new_files_to_vault = []
@@ -711,11 +661,7 @@ if app_mode == "Plagiarism Checker":
                                 score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
                                 similarity_matrix[i][j] = min(round(score * 1.4, 2), 100.0)
                 else:
-                    vectorizer = TfidfVectorizer(
-                        stop_words='english', 
-                        ngram_range=(min_words, max_words), 
-                        max_features=10000
-                    )
+                    vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(min_words, max_words), max_features=10000)
                     tfidf_matrix = vectorizer.fit_transform(documents)
                     similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
                 
@@ -797,7 +743,6 @@ if app_mode == "Plagiarism Checker":
         flat_scores = [similarity_matrix[i][j] for i in range(total_files) for j in range(total_files) if i != j]
         max_sim = max(flat_scores) if flat_scores else 0.0
         avg_sim = sum(flat_scores) / len(flat_scores) if flat_scores else 0.0
-        
         flagged_pairs_count = sum(1 for score in flat_scores if score >= similarity_threshold)
 
         mcol1, mcol2, mcol3, mcol4 = st.columns(4)
@@ -811,13 +756,11 @@ if app_mode == "Plagiarism Checker":
             st.metric("🚨 Flagged Pairs (≥{}%)".format(similarity_threshold), flagged_pairs_count)
 
         if flagged_pairs_count > 0:
-            st.warning(f"⚠️ **Attention:** Found **{flagged_pairs_count} document pair(s)** meeting or exceeding the **{similarity_threshold}%** threshold limit. Review the heatmap and report below.")
+            st.warning(f"⚠️ **Attention:** Found **{flagged_pairs_count} document pair(s)** meeting or exceeding the **{similarity_threshold}%** threshold limit.")
         else:
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use scrollbars around the chart to navigate the matrix. Hover over any cell for exact scores.*")
-        
         truncated_names = [name if len(name) <= 25 else name[:22] + "..." for name in filenames]
         chart_dimension = max(900, total_files * 35)
         
@@ -831,15 +774,7 @@ if app_mode == "Plagiarism Checker":
             zmin=0,
             zmax=100
         ))
-        
-        fig.update_layout(
-            width=chart_dimension,
-            height=chart_dimension,
-            margin=dict(l=180, r=50, t=50, b=180),
-            xaxis=dict(tickangle=-45, type='category'),
-            yaxis=dict(autorange='reversed', type='category')
-        )
-        
+        fig.update_layout(width=chart_dimension, height=chart_dimension, margin=dict(l=180, r=50, t=50, b=180), xaxis=dict(tickangle=-45, type='category'), yaxis=dict(autorange='reversed', type='category'))
         st.plotly_chart(fig, use_container_width=False)
 
         st.subheader("Similarity Matrix Report (%)")
@@ -848,11 +783,10 @@ if app_mode == "Plagiarism Checker":
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name='Plagiarism Report')
-        processed_data = output.getvalue()
         
         st.download_button(
             label="📥 Download Plagiarism Report (Excel)",
-            data=processed_data,
+            data=output.getvalue(),
             file_name=f"plagiarism_report_{current_course.replace(' | ', '_').replace(': ', '_').replace(' ', '_')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_excel_report_{rc}"
@@ -1034,7 +968,6 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
     if not file1 or not file2:
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
-
 # ==========================================
 # MODE 3: AI GRADER & RUBRIC EVALUATION
 # ==========================================
@@ -1063,7 +996,6 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
 
         st.markdown("---")
         exemplary_badge_pct = st.slider("🏆 Exemplary Badge Allocation Top %", min_value=0, max_value=50, value=15, step=5, help="Percentage of top-performing students to be awarded Exemplary Badges.")
-        
         run_plagiarism_with_ai = st.checkbox("🔍 Also Run Integrated Plagiarism Check on Submissions", value=True, help="Automatically calculates cross-submission text similarity and adds max similarity scores to the grading sheet.")
 
         st.markdown("---")
@@ -1233,4 +1165,307 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
 
                         if res_text.startswith("```"):
                             res_text = re.sub(r"^```(?:json)?\n?", "", res_text)
-                            res_text = re.sub(r"\n?
+                            res_text = re.sub(r"\n?```$", "", res_text)
+
+                        try:
+                            parsed_json = json.loads(res_text)
+                        except Exception:
+                            parsed_json = {"Feedback": res_text, "Total Score": "Review Manually"}
+
+                        row_data = {"Student Name": f"🆕 [New] {student_name}" if ai_is_cumulative else student_name}
+                        row_data.update(parsed_json)
+                        
+                        max_sim_val = similarity_scores_map.get(student_name, 0.0)
+                        row_data["Max Peer Similarity (%)"] = f"{max_sim_val}%" if run_plagiarism_with_ai else "Disabled"
+                        row_data["Exemplary Badge"] = "Pending"
+                        new_evaluation_results.append(row_data)
+
+                        if ai_is_cumulative:
+                            try:
+                                conn = sqlite3.connect(DB_FILE)
+                                cursor = conn.cursor()
+                                cursor.execute("delete from ai_grades_vault where lms_number = ? and assignment_name = ? and student_name = ?", (ai_lms_val, ai_assign_val, student_name))
+                                cursor.execute("""
+                                    insert into ai_grades_vault (lms_number, assignment_name, student_name, grades_json, exemplary_badge, timestamp, expiry_date)
+                                    values (?, ?, ?, ?, ?, ?, ?)
+                                """, (ai_lms_val, ai_assign_val, student_name, json.dumps(parsed_json), "Pending", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), expiry_date))
+                                conn.commit()
+                                conn.close()
+                            except Exception:
+                                pass
+
+                    progress_bar.empty()
+                    status_text.empty()
+                    st.success("AI Rubric Evaluation & Plagiarism Integration Complete!")
+
+                    all_evals = historical_grades + new_evaluation_results
+                    
+                    def extract_score_val(item):
+                        score_field = item.get("Total Score", "0")
+                        match = re.search(r'([\d.]+)', str(score_field))
+                        return float(match.group(1)) if match else 0.0
+
+                    all_evals.sort(key=extract_score_val, reverse=True)
+                    
+                    badge_count = max(1, int(len(all_evals) * (exemplary_badge_pct / 100.0)))
+                    for i, ev in enumerate(all_evals):
+                        if i < badge_count:
+                            ev["Exemplary Badge"] = "🌟 Awarded (Exemplary)"
+                        else:
+                            ev["Exemplary Badge"] = "-"
+
+                    df_grades = pd.DataFrame(all_evals)
+                    st.subheader("📊 Comprehensive Student Grades & Plagiarism Summary")
+                    st.dataframe(df_grades, use_container_width=True)
+
+                    out_excel = io.BytesIO()
+                    with pd.ExcelWriter(out_excel, engine='openpyxl') as writer:
+                        df_grades.to_excel(writer, index=False, sheet_name='AI Grades & Plagiarism')
+                    
+                    st.download_button(
+                        label="📥 Download Combined Grading & Plagiarism Table (Excel)",
+                        data=out_excel.getvalue(),
+                        file_name=f"ai_grading_and_plagiarism_report_{ai_assign_val.replace(' ', '_')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"dl_ai_excel_{rc}"
+                    )
+
+                except Exception as ex:
+                    st.error(f"An error occurred during evaluation: {ex}")
+        elif student_files_map and (not rubric_file or not instructions_file):
+            st.warning("Please upload both the **Grading Rubric** and **Assignment Instructions** to run evaluation.")
+
+# ==========================================
+# MODE 4: ACCESS REQUESTS MANAGEMENT (ADMIN ONLY)
+# ==========================================
+elif is_admin and app_mode == "🔐 Access Requests Management":
+    st.header("🔐 Access Requests Management")
+    st.write("Review, approve, or manage pending user access requests for APLens Beta.")
+
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        df_requests = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
+        conn.close()
+    except Exception:
+        df_requests = pd.DataFrame()
+
+    if df_requests.empty:
+        st.info("✅ No pending access requests at this time.")
+    else:
+        st.write(f"Found **{len(df_requests)} pending request(s)**.")
+
+        master_select_key = f"master_select_all_{rc}"
+        if master_select_key not in st.session_state:
+            st.session_state[master_select_key] = False
+
+        approval_rows = []
+        for idx, row in df_requests.iterrows():
+            chk_key = f"req_chk_{row['id']}_{rc}"
+            if chk_key not in st.session_state:
+                st.session_state[chk_key] = st.session_state[master_select_key]
+            
+            approval_rows.append({
+                "id": row["id"],
+                "Select": st.checkbox("", value=st.session_state[chk_key], key=chk_key),
+                "Name": row["name"],
+                "Email ID": row["email"],
+                "Remarks": row["remarks"],
+                "Timestamp": row["timestamp"]
+            })
+
+        df_display = pd.DataFrame(approval_rows)
+        
+        col_master_chk, _ = st.columns([0.2, 0.8])
+        with col_master_chk:
+            master_toggle = st.checkbox("Select / Unselect All", value=st.session_state[master_select_key], key=f"master_toggle_btn_{rc}")
+            if master_toggle != st.session_state[master_select_key]:
+                st.session_state[master_select_key] = master_toggle
+                for row in approval_rows:
+                    st.session_state[f"req_chk_{row['id']}_{rc}"] = master_toggle
+                st.rerun()
+
+        st.dataframe(df_display[["Select", "Name", "Email ID", "Remarks", "Timestamp"]], use_container_width=True)
+
+        col_act1, col_act2, _ = st.columns([1, 1, 1])
+        with col_act1:
+            approve_selected = st.button("Approve Selected", type="primary", use_container_width=True, key=f"approve_sel_{rc}")
+        with col_act2:
+            approve_all = st.button("Approve All", type="secondary", use_container_width=True, key=f"approve_all_{rc}")
+
+        if approve_selected or approve_all:
+            emails_to_approve = []
+            for row in approval_rows:
+                if approve_all or st.session_state.get(f"req_chk_{row['id']}_{rc}", False):
+                    emails_to_approve.append((row["email"], row["id"]))
+
+            if not emails_to_approve:
+                st.warning("No requests selected for approval.")
+            else:
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    for email, req_id in emails_to_approve:
+                        cursor.execute("insert or ignore into authorized_users (email, approved_at) values (?, ?)", 
+                                       (email.lower(), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                        cursor.execute("delete from access_requests where id = ?", (req_id,))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"Successfully approved {len(emails_to_approve)} user(s)!")
+                    time.sleep(1.5)
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"Error approving requests: {ex}")
+
+# ==========================================
+# MODE 5: REPORT HISTORY DASHBOARD & ADMIN AUDIT TRAIL
+# ==========================================
+elif app_mode == "📁 Report History Dashboard":
+    st.header("📁 Saved Report History & Course Data Management")
+    
+    st.subheader("🗑️ Manual Course / Assignment Data Purge")
+    st.write("Select or type an LMS Number and Assignment Name to completely clear its stored document vault, instructions, and AI grades.")
+    
+    col_purge1, col_purge2, col_purge3 = st.columns([1, 1, 1])
+    with col_purge1:
+        purge_lms = st.text_input("LMS Number to Purge", placeholder="e.g., 48921", key=f"purge_lms_{rc}")
+    with col_purge2:
+        purge_assign = st.text_input("Assignment Name to Purge", placeholder="e.g., Assignment A", key=f"purge_assign_{rc}")
+    with col_purge3:
+        st.markdown("<div style='padding-top: 24px;'></div>", unsafe_allow_html=True)
+        if st.button("🗑️ Purge Course Records", type="secondary", key=f"purge_btn_{rc}"):
+            if purge_lms.strip() and purge_assign.strip():
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute("delete from course_document_vault where lms_number = ? and assignment_name = ?", (purge_lms.strip(), purge_assign.strip()))
+                    cursor.execute("delete from course_metadata where lms_number = ? and assignment_name = ?", (purge_lms.strip(), purge_assign.strip()))
+                    cursor.execute("delete from ai_grades_vault where lms_number = ? and assignment_name = ?", (purge_lms.strip(), purge_assign.strip()))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"Successfully purged all vaults and reports for LMS: {purge_lms} | Assignment: {purge_assign}")
+                except Exception as ex:
+                    st.error(f"Error purging records: {ex}")
+            else:
+                st.warning("Please provide both LMS Number and Assignment Name to purge.")
+
+    st.markdown("---")
+
+    if is_admin:
+        col_h1, col_h2 = st.columns([0.8, 0.2])
+        with col_h2:
+            if st.button("Fetch Reports", type="secondary", key=f"fetch_reports_btn_{rc}"):
+                st.rerun()
+                
+        tab_my_reports, tab_audit_log, tab_deep_log = st.tabs(["My Saved Reports", "📊 User Activity & Settings Log", "🔍 Deep Dive (>50%) Log"])
+    else:
+        tab_my_reports, = st.tabs(["My Saved Reports"])
+    
+    with tab_my_reports:
+        if not st.session_state.saved_reports:
+            st.info("No reports saved yet. Run a Plagiarism Analysis with 'Save Generated Reports' enabled to populate your history.")
+        else:
+            col_dash1, col_dash2 = st.columns([0.8, 0.2])
+            with col_dash2:
+                if st.button("🗑️ Clear All Local Session History", type="secondary", key=f"clear_hist_btn_{rc}"):
+                    st.session_state.saved_reports = []
+                    st.rerun()
+
+            for idx, rep in enumerate(reversed(st.session_state.saved_reports)):
+                with st.expander(f"📌 [{rep['timestamp']}] {rep['course']} — {rep['type']} ({rep['files_count']} files, Expires: {rep['expiry']})"):
+                    st.write(f"**Course/Assignment:** {rep['course']}")
+                    st.write(f"**Analysis Mode:** {rep['type']}")
+                    st.write(f"**Files Processed:** {rep['files_count']}")
+                    st.write(f"**Scheduled Expiry:** {rep['expiry']}")
+                    
+                    st.dataframe(rep['df'].style.format("{:.2f}%"))
+                    
+                    h_output = io.BytesIO()
+                    with pd.ExcelWriter(h_output, engine='openpyxl') as writer:
+                        rep['df'].to_excel(writer, sheet_name='Report History')
+                    
+                    st.download_button(
+                        label=f"📥 Download Report ({rep['timestamp']})",
+                        data=h_output.getvalue(),
+                        file_name=f"history_report_{rep['course'].replace(' | ', '_').replace(': ', '_').replace(' ', '_')}_{idx}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"hist_dl_{idx}_{rc}"
+                    )
+    
+    if is_admin:
+        with tab_audit_log:
+            st.subheader("Plagiarism Checker Activity & Settings Audit Trail")
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                df_logs = pd.read_sql_query("select * from beta_user_activity order by timestamp desc", conn)
+                conn.close()
+                
+                if not df_logs.empty:
+                    st.dataframe(df_logs, use_container_width=True)
+                    csv_data = df_logs.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Plagiarism Activity Log (CSV)",
+                        data=csv_data,
+                        file_name="beta_user_activity_audit_trail.csv",
+                        mime="text/csv",
+                        key=f"dl_audit_csv_{rc}"
+                    )
+                else:
+                    st.info("No user activity logs recorded yet.")
+            except Exception as ex:
+                st.warning(f"Could not load logs: {ex}")
+
+        with tab_deep_log:
+            st.subheader("Deep Dive Matcher (>50% Instances) Log")
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                df_deep = pd.read_sql_query("select * from beta_deep_dive_activity order by timestamp desc", conn)
+                conn.close()
+                
+                if not df_deep.empty:
+                    st.dataframe(df_deep, use_container_width=True)
+                    csv_deep = df_deep.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Deep Dive Activity Log (CSV)",
+                        data=csv_deep,
+                        file_name="beta_deep_dive_activity_log.csv",
+                        mime="text/csv",
+                        key=f"dl_deep_csv_{rc}"
+                    )
+                else:
+                    st.info("No deep dive logs recorded yet.")
+            except Exception as ex:
+                st.warning(f"Could not load deep dive logs: {ex}")
+
+# ==========================================
+# MODE 6: USER GUIDE & HELP
+# ==========================================
+elif app_mode == "💡 User Guide & Help":
+    st.header("💡 Grader Guide & Help Center")
+    st.write("Welcome to the APLens Beta Suite. This comprehensive guide is designed for graders to help you navigate login security, cumulative late submissions, AI rubric grading, and report tracking.")
+
+    st.markdown("---")
+
+    st.subheader("1. Gated Google Authentication & Access Control")
+    st.write(
+        "* **Secure Whitelist Approval:** Only pre-approved email addresses can access APLens Beta. New users must submit an approval request with their name and remarks upon signing in.\n"
+        "* **Admin Access Management:** Arun Peswani (`arunpeswani@gmail.com`) can review, select, and approve incoming requests in bulk or individually via the Access Requests Management panel."
+    )
+
+    st.subheader("2. AI Grader, Rate-Limiting & Multimodal Evaluation")
+    st.write(
+        "* **Automated RPM Rate-Limiting:** The app intelligently tracks request frequencies and automatically paces batches to respect Google AI Studio free tier limits (10–15 RPM) with built-in exponential backoff retries.\n"
+        "* **Multi-File ZIP Grouping:** Submissions packed in ZIP archives are automatically grouped by student name so each student gets one holistic evaluation row.\n"
+        "* **Exemplary Badge Allocation:** Specify the top percentage of students to receive Exemplary Badges based on rubric performance."
+    )
+
+    st.subheader("3. Cumulative Late Submissions, 60-Day Retention & Purge")
+    st.write(
+        "* **Conditional Cumulative Trigger:** Cumulative checking and AI grading history **only** load/save if **both** LMS Number and Assignment Name are provided.\n"
+        "* **Default 60-Day Retention:** Reports automatically schedule deletion after 60 days (customizable via the sidebar dropdown).\n"
+        "* **Manual Purge:** Use the Course Data Purge tool in the Report History dashboard to instantly delete records for a specific LMS number and assignment."
+    )
+
+    st.subheader("4. Support & Contact")
+    st.write(
+        "For assistance, please contact **Arun Peswani**."
+    )
