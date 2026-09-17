@@ -4,6 +4,7 @@ import zipfile
 import datetime
 import sqlite3
 import json
+import time
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -171,7 +172,6 @@ user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", No
 if not user_avatar:
     user_avatar = "https://www.w3schools.com/howto/img_avatar.png"
 
-# Handle native authentication action trigger if clicked
 if "action" in st.query_params and st.query_params["action"] == "login":
     st.login("google")
 
@@ -920,7 +920,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 # ==========================================
 elif app_mode == "🤖 AI Grader & Rubric Evaluation":
     st.header("🤖 AI Grader & Rubric Evaluation Suite")
-    st.write("Upload assignment instructions, a grading rubric, and student submission files. Gemini will evaluate each student holistically, run an integrated similarity check if enabled, and generate question scores and Exemplary Badges.")
+    st.write("Upload assignment instructions, a grading rubric, and student submission files. Gemini will evaluate each student holistically with robust rate-limiting safeguards, run an integrated similarity check if enabled, and generate question scores and Exemplary Badges.")
 
     if not user_gemini_key.strip():
         st.warning("⚠️ Please enter your Google AI Studio API Key in the sidebar under **🔑 AI Grader API Key (BYOK)** to use the AI Grader.")
@@ -1027,7 +1027,6 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                         sim_mat = cosine_similarity(tfidf_mat) * 100
                         
                         for idx, s_name in enumerate(all_student_names):
-                            # Max similarity against any other peer
                             peer_scores = [sim_mat[idx][j] for j in range(len(all_student_names)) if idx != j]
                             similarity_scores_map[s_name] = round(max(peer_scores), 1) if peer_scores else 0.0
 
@@ -1055,8 +1054,23 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                     
                     new_evaluation_results = []
                     total_students = len(student_files_map)
+                    
+                    # Rate-limiting state trackers (safeguard against 10-15 RPM free tier limits)
+                    request_timestamps = []
 
                     for idx, (student_name, file_list) in enumerate(student_files_map.items()):
+                        # --- RPM RATE LIMITING SAFEGUARD ---
+                        now = time.time()
+                        # Filter timestamps in the last 60 seconds
+                        request_timestamps = [t for t in request_timestamps if now - t < 60.0]
+                        if len(request_timestamps) >= 10:
+                            # Approaching free tier RPM limit; pause politely for a few seconds to reset window
+                            sleep_duration = 65.0 - (now - request_timestamps[0])
+                            if sleep_duration > 0:
+                                status_text.text(f"⏳ Rate-limit safeguard: Pausing for {int(sleep_duration)}s to respect Google AI Studio RPM limits...")
+                                time.sleep(sleep_duration)
+                        request_timestamps.append(time.time())
+
                         status_text.text(f"Evaluating student {idx+1} of {total_students}: {student_name} (AI Rubric & Vision)...")
                         progress_bar.progress(int(100 * (idx + 1) / total_students))
 
@@ -1088,8 +1102,23 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                         """
 
                         contents = [prompt] + combined_student_images + rubric_imgs + inst_imgs
-                        response = model.generate_content(contents)
-                        res_text = response.text.strip()
+                        
+                        # --- EXPONENTIAL BACKOFF RETRY LOGIC FOR API CALLS ---
+                        max_retries = 3
+                        retry_delay = 5.0
+                        res_text = ""
+                        
+                        for attempt in range(max_retries):
+                            try:
+                                response = model.generate_content(contents)
+                                res_text = response.text.strip()
+                                break
+                            except Exception as api_err:
+                                if attempt == max_retries - 1:
+                                    res_text = f'{{"Feedback": "API error after retries: {str(api_err)}", "Total Score": "0"}}'
+                                else:
+                                    time.sleep(retry_delay)
+                                    retry_delay *= 2.0
 
                         if res_text.startswith("```"):
                             res_text = re.sub(r"^```(?:json)?\n?", "", res_text)
@@ -1103,7 +1132,6 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                         row_data = {"Student Name": f"🆕 [New] {student_name}" if ai_is_cumulative else student_name}
                         row_data.update(parsed_json)
                         
-                        # Attach integrated plagiarism max similarity score if enabled
                         max_sim_val = similarity_scores_map.get(student_name, 0.0)
                         row_data["Max Peer Similarity (%)"] = f"{max_sim_val}%" if run_plagiarism_with_ai else "Disabled"
                         row_data["Exemplary Badge"] = "Pending"
@@ -1164,6 +1192,7 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
         elif student_files_map and (not rubric_file or not instructions_file):
             st.warning("Please upload both the **Grading Rubric** and **Assignment Instructions** to run evaluation.")
 
+
 # ==========================================
 # MODE 4: REPORT HISTORY DASHBOARD & ADMIN AUDIT TRAIL
 # ==========================================
@@ -1172,7 +1201,6 @@ elif app_mode == "📁 Report History Dashboard":
     
     is_admin = user_email.lower() == "arunpeswani@gmail.com"
     
-    # Manual Course Deletion Utility for Graders
     st.subheader("🗑️ Manual Course / Assignment Data Purge")
     st.write("Select or type an LMS Number and Assignment Name to completely clear its stored document vault, instructions, and AI grades.")
     
@@ -1302,10 +1330,10 @@ elif app_mode == "💡 User Guide & Help":
         "* **Bring Your Own Key (BYOK):** Paste your free Google AI Studio API key in the sidebar. It is securely saved to your account in SQLite so you only have to enter it once ever."
     )
 
-    st.subheader("2. AI Grader & Multimodal Rubric Evaluation")
+    st.subheader("2. AI Grader, Rate-Limiting & Multimodal Evaluation")
     st.write(
-        "* **Multi-File ZIPs per Student:** If students submit multiple files packed in a ZIP, the app groups them by student name/folder automatically so each student gets one holistic row of evaluation.\n"
-        "* **Multimodal Vision:** Gemini reads embedded screenshots, code snippets, and diagrams inside student PDFs or Word docs.\n"
+        "* **Automated RPM Rate-Limiting:** The app intelligently tracks request frequencies and automatically paces batches to respect Google AI Studio free tier limits (10–15 RPM) with built-in exponential backoff retries.\n"
+        "* **Multi-File ZIP Grouping:** Submissions packed in ZIP archives are automatically grouped by student name so each student gets one holistic evaluation row.\n"
         "* **Exemplary Badge Allocation:** Specify the top percentage of students to receive Exemplary Badges based on rubric performance."
     )
 
