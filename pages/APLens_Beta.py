@@ -1267,35 +1267,30 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
         else:
             st.write(f"Found **{len(df_requests)} pending request(s)**.")
 
-            master_select_key = f"master_select_all_{rc}"
-            if master_select_key not in st.session_state:
-                st.session_state[master_select_key] = False
-
-            col_master_chk, _ = st.columns([0.25, 0.75])
-            with col_master_chk:
-                master_toggle = st.checkbox("Select / Unselect All", value=st.session_state[master_select_key], key=f"master_toggle_btn_{rc}")
-                if master_toggle != st.session_state[master_select_key]:
-                    st.session_state[master_select_key] = master_toggle
-                    for idx, row in df_requests.iterrows():
-                        st.session_state[f"req_chk_{row['id']}_{rc}"] = master_toggle
-                    st.rerun()
-
-            approval_rows = []
+            # Prepare data for interactive st.data_editor
+            editor_rows = []
             for idx, row in df_requests.iterrows():
-                chk_key = f"req_chk_{row['id']}_{rc}"
-                if chk_key not in st.session_state:
-                    st.session_state[chk_key] = st.session_state[master_select_key]
-                
-                approval_rows.append({
-                    "Select": st.checkbox("", value=st.session_state[chk_key], key=chk_key),
+                editor_rows.append({
+                    "Select": False,
+                    "id": row["id"],
                     "Name": row["name"],
                     "Email ID": row["email"],
                     "Remarks": row["remarks"],
                     "Timestamp": row["timestamp"]
                 })
+            df_editor_input = pd.DataFrame(editor_rows)
 
-            df_display = pd.DataFrame(approval_rows)
-            st.dataframe(df_display, use_container_width=True, hide_index=True)
+            edited_pending_df = st.data_editor(
+                df_editor_input,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn("Select", default=False),
+                    "id": None, # Hide internal primary key column
+                },
+                disabled=["Name", "Email ID", "Remarks", "Timestamp"],
+                hide_index=True,
+                use_container_width=True,
+                key=f"pending_editor_{rc}"
+            )
 
             col_act1, col_act2, _ = st.columns([1, 1, 1])
             with col_act1:
@@ -1305,10 +1300,9 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
 
             if approve_selected or approve_all:
                 emails_to_approve = []
-                for idx, row in df_requests.iterrows():
-                    chk_val = st.session_state.get(f"req_chk_{row['id']}_{rc}", False)
-                    if approve_all or chk_val:
-                        emails_to_approve.append((row["email"], row["name"], row["timestamp"], row["id"]))
+                for idx, row in edited_pending_df.iterrows():
+                    if approve_all or row["Select"]:
+                        emails_to_approve.append((row["Email ID"], row["Name"], row["Timestamp"], row["id"]))
 
                 if not emails_to_approve:
                     st.warning("No requests selected for approval.")
@@ -1348,38 +1342,28 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
         else:
             st.write(f"Found **{len(df_registered)} registered user(s)**.")
 
-            master_reg_key = f"master_reg_select_all_{rc}"
-            if master_reg_key not in st.session_state:
-                st.session_state[master_reg_key] = False
-
-            col_reg_chk, _ = st.columns([0.25, 0.75])
-            with col_reg_chk:
-                master_reg_toggle = st.checkbox("Select / Unselect All", value=st.session_state[master_reg_key], key=f"master_reg_toggle_btn_{rc}")
-                if master_reg_toggle != st.session_state[master_reg_key]:
-                    st.session_state[master_reg_key] = master_reg_toggle
-                    for idx, row in df_registered.iterrows():
-                        st.session_state[f"reg_chk_{idx}_{rc}"] = master_reg_toggle
-                    st.rerun()
-
-            reg_rows = []
+            reg_editor_rows = []
             for idx, row in df_registered.iterrows():
-                reg_chk_key = f"reg_chk_{idx}_{rc}"
-                if reg_chk_key not in st.session_state:
-                    st.session_state[reg_chk_key] = st.session_state[master_reg_key]
-                
-                # Prevent unregistering super admin arunpeswani@gmail.com by disabling checkbox or protecting logic
                 is_admin_user = row["email"].lower() == "arunpeswani@gmail.com"
-                
-                reg_rows.append({
-                    "Select": False if is_admin_user else st.checkbox("", value=st.session_state[reg_chk_key], key=reg_chk_key, disabled=is_admin_user),
+                reg_editor_rows.append({
+                    "Select": False,
                     "Name": row["name"] or "N/A",
                     "Email ID": row["email"],
                     "Request Timestamp": row["requested_at"] or "N/A",
                     "Approval Timestamp": row["approved_at"] or "N/A"
                 })
+            df_reg_input = pd.DataFrame(reg_editor_rows)
 
-            df_reg_display = pd.DataFrame(reg_rows)
-            st.dataframe(df_reg_display, use_container_width=True, hide_index=True)
+            edited_reg_df = st.data_editor(
+                df_reg_input,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn("Select", default=False),
+                },
+                disabled=["Name", "Email ID", "Request Timestamp", "Approval Timestamp"],
+                hide_index=True,
+                use_container_width=True,
+                key=f"registered_editor_{rc}"
+            )
 
             col_unreg1, _ = st.columns([1, 2])
             with col_unreg1:
@@ -1387,11 +1371,11 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
 
             if unregister_selected:
                 emails_to_unregister = []
-                for idx, row in df_registered.iterrows():
-                    if row["email"].lower() == "arunpeswani@gmail.com":
+                for idx, row in edited_reg_df.iterrows():
+                    if row["Email ID"].lower() == "arunpeswani@gmail.com":
                         continue
-                    if st.session_state.get(f"reg_chk_{idx}_{rc}", False):
-                        emails_to_unregister.append(row["email"])
+                    if row["Select"]:
+                        emails_to_unregister.append(row["Email ID"])
 
                 if not emails_to_unregister:
                     st.warning("No valid users selected for unregistering.")
