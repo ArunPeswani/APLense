@@ -1267,7 +1267,6 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
         else:
             st.write(f"Found **{len(df_requests)} pending request(s)**.")
 
-            # Prepare data for interactive st.data_editor
             editor_rows = []
             for idx, row in df_requests.iterrows():
                 editor_rows.append({
@@ -1284,7 +1283,7 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                 df_editor_input,
                 column_config={
                     "Select": st.column_config.CheckboxColumn("Select", default=False),
-                    "id": None, # Hide internal primary key column
+                    "id": None,
                 },
                 disabled=["Name", "Email ID", "Remarks", "Timestamp"],
                 hide_index=True,
@@ -1292,35 +1291,45 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                 key=f"pending_editor_{rc}"
             )
 
-            col_act1, col_act2, _ = st.columns([1, 1, 1])
+            col_act1, col_act2, col_act3, _ = st.columns([1, 1, 1, 1])
             with col_act1:
                 approve_selected = st.button("Approve Selected", type="primary", use_container_width=True, key=f"approve_sel_{rc}")
             with col_act2:
                 approve_all = st.button("Approve All", type="secondary", use_container_width=True, key=f"approve_all_{rc}")
+            with col_act3:
+                delete_selected = st.button("Delete Selected", type="secondary", use_container_width=True, key=f"delete_sel_{rc}")
 
-            if approve_selected or approve_all:
-                emails_to_approve = []
+            if approve_selected or approve_all or delete_selected:
+                target_requests = []
                 for idx, row in edited_pending_df.iterrows():
                     if approve_all or row["Select"]:
-                        emails_to_approve.append((row["Email ID"], row["Name"], row["Timestamp"], row["id"]))
+                        target_requests.append((row["Email ID"], row["Name"], row["Timestamp"], row["id"]))
 
-                if not emails_to_approve:
-                    st.warning("No requests selected for approval.")
+                if not target_requests:
+                    st.warning("No pending requests selected.")
                 else:
                     try:
                         conn = sqlite3.connect(DB_FILE)
                         cursor = conn.cursor()
-                        for email, name, req_ts, req_id in emails_to_approve:
-                            cursor.execute("insert or replace into authorized_users (email, name, requested_at, approved_at) values (?, ?, ?, ?)", 
-                                           (email.lower(), name, req_ts, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                            cursor.execute("delete from access_requests where id = ?", (req_id,))
-                        conn.commit()
-                        conn.close()
-                        st.success(f"Successfully approved {len(emails_to_approve)} user(s)!")
+                        if delete_selected:
+                            for email, name, req_ts, req_id in target_requests:
+                                cursor.execute("delete from access_requests where id = ?", (req_id,))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"Successfully deleted {len(target_requests)} pending request(s)!")
+                        else:
+                            for email, name, req_ts, req_id in target_requests:
+                                cursor.execute("insert or replace into authorized_users (email, name, requested_at, approved_at) values (?, ?, ?, ?)", 
+                                               (email.lower(), name, req_ts, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                                cursor.execute("delete from access_requests where id = ?", (req_id,))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"Successfully approved {len(target_requests)} user(s)!")
+                        
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as ex:
-                        st.error(f"Error approving requests: {ex}")
+                        st.error(f"Error processing requests: {ex}")
 
     with tab_registered:
         st.subheader("👥 Approved & Registered Users")
@@ -1370,24 +1379,28 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                 unregister_selected = st.button("Unregister Selected Users", type="primary", use_container_width=True, key=f"unreg_sel_{rc}")
 
             if unregister_selected:
-                emails_to_unregister = []
+                users_to_unregister = []
                 for idx, row in edited_reg_df.iterrows():
                     if row["Email ID"].lower() == "arunpeswani@gmail.com":
                         continue
                     if row["Select"]:
-                        emails_to_unregister.append(row["Email ID"])
+                        users_to_unregister.append((row["Email ID"], row["Name"], row["Request Timestamp"]))
 
-                if not emails_to_unregister:
+                if not users_to_unregister:
                     st.warning("No valid users selected for unregistering.")
                 else:
                     try:
                         conn = sqlite3.connect(DB_FILE)
                         cursor = conn.cursor()
-                        for email in emails_to_unregister:
+                        for email, name, req_ts in users_to_unregister:
                             cursor.execute("delete from authorized_users where email = ?", (email.lower(),))
+                            cursor.execute("""
+                                insert or ignore into access_requests (name, email, remarks, timestamp)
+                                values (?, ?, ?, ?)
+                            """, (name, email.lower(), "Unregistered by admin. Re-request required.", req_ts))
                         conn.commit()
                         conn.close()
-                        st.success(f"Successfully unregistered {len(emails_to_unregister)} user(s)!")
+                        st.success(f"Successfully unregistered {len(users_to_unregister)} user(s) and moved them back to Pending Requests!")
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as ex:
@@ -1525,7 +1538,7 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("1. Gated Google Authentication & Access Control")
     st.write(
         "* **Secure Whitelist Approval:** Only pre-approved email addresses can access APLens Beta. New users must submit an approval request with their name and remarks upon signing in.\n"
-        "* **Admin Access Management:** Arun Peswani (`arunpeswani@gmail.com`) can review, select, and approve incoming requests, as well as manage or unregister active users via the Access Requests Management panel."
+        "* **Admin Access Management:** Arun Peswani (`arunpeswani@gmail.com`) can review, select, and approve or delete pending incoming requests, as well as unregister active users (moving them back to pending requests) via the Access Requests Management panel."
     )
 
     st.subheader("2. AI Grader, Rate-Limiting & Multimodal Evaluation")
