@@ -183,6 +183,9 @@ if not user_avatar:
 if "action" in st.query_params and st.query_params["action"] == "login":
     st.login("google")
 
+# ==========================================
+# GATED LOGIN CHECK & AUTHORIZATION GATE
+# ==========================================
 if not user_is_logged_in:
     st.title("🧪 APLens Beta - Plagiarism & AI Grader Suite")
     st.markdown("---")
@@ -1242,6 +1245,11 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
     st.header("🔐 Access Requests Management")
     st.write("Review, approve, or manage pending user access requests for APLens Beta.")
 
+    col_h_btn1, col_h_btn2 = st.columns([0.2, 0.8])
+    with col_h_btn1:
+        if st.button("🔄 Refresh Requests", type="secondary", use_container_width=True, key=f"refresh_reqs_{rc}"):
+            st.rerun()
+
     try:
         conn = sqlite3.connect(DB_FILE)
         df_requests = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
@@ -1257,6 +1265,16 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
         master_select_key = f"master_select_all_{rc}"
         if master_select_key not in st.session_state:
             st.session_state[master_select_key] = False
+
+        # Master select/unselect toggle handler before widgets render
+        col_master_chk, _ = st.columns([0.25, 0.75])
+        with col_master_chk:
+            master_toggle = st.checkbox("Select / Unselect All", value=st.session_state[master_select_key], key=f"master_toggle_btn_{rc}")
+            if master_toggle != st.session_state[master_select_key]:
+                st.session_state[master_select_key] = master_toggle
+                for idx, row in df_requests.iterrows():
+                    st.session_state[f"req_chk_{row['id']}_{rc}"] = master_toggle
+                st.rerun()
 
         approval_rows = []
         for idx, row in df_requests.iterrows():
@@ -1274,16 +1292,6 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
             })
 
         df_display = pd.DataFrame(approval_rows)
-        
-        col_master_chk, _ = st.columns([0.2, 0.8])
-        with col_master_chk:
-            master_toggle = st.checkbox("Select / Unselect All", value=st.session_state[master_select_key], key=f"master_toggle_btn_{rc}")
-            if master_toggle != st.session_state[master_select_key]:
-                st.session_state[master_select_key] = master_toggle
-                for row in approval_rows:
-                    st.session_state[f"req_chk_{row['id']}_{rc}"] = master_toggle
-                st.rerun()
-
         st.dataframe(df_display[["Select", "Name", "Email ID", "Remarks", "Timestamp"]], use_container_width=True)
 
         col_act1, col_act2, _ = st.columns([1, 1, 1])
