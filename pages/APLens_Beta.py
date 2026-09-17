@@ -920,7 +920,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 # ==========================================
 elif app_mode == "🤖 AI Grader & Rubric Evaluation":
     st.header("🤖 AI Grader & Rubric Evaluation Suite")
-    st.write("Upload assignment instructions, a grading rubric, and student submission files (including ZIP archives containing multi-file submissions per student). Gemini will evaluate each student holistically and generate question scores and Exemplary Badges.")
+    st.write("Upload assignment instructions, a grading rubric, and student submission files. Gemini will evaluate each student holistically, run an integrated similarity check if enabled, and generate question scores and Exemplary Badges.")
 
     if not user_gemini_key.strip():
         st.warning("⚠️ Please enter your Google AI Studio API Key in the sidebar under **🔑 AI Grader API Key (BYOK)** to use the AI Grader.")
@@ -945,35 +945,29 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
         st.markdown("---")
         exemplary_badge_pct = st.slider("🏆 Exemplary Badge Allocation Top %", min_value=0, max_value=50, value=15, step=5, help="Percentage of top-performing students to be awarded Exemplary Badges.")
         
-        run_plagiarism_with_ai = st.checkbox("🔍 Also Run Integrated Plagiarism Check on Submissions", value=True, help="Runs similarity matrix check alongside AI grading.")
+        run_plagiarism_with_ai = st.checkbox("🔍 Also Run Integrated Plagiarism Check on Submissions", value=True, help="Automatically calculates cross-submission text similarity and adds max similarity scores to the grading sheet.")
 
         st.markdown("---")
         ai_upload_choice = st.radio("Student Submissions Upload Type", ["Individual Files / Student ZIP Archives (.zip)", "Direct Folder Selection"], key=f"ai_up_choice_{rc}")
 
-        # Helper to group files by student name
         def parse_student_name_from_path(filename):
-            # Clean path separators
             clean_name = filename.replace('\\', '/')
             parts = clean_name.split('/')
             if len(parts) > 1:
-                # If inside folder in ZIP (e.g. StudentName/Q1.docx)
                 return parts[0]
             base = os.path.basename(clean_name)
-            # Remove extension
             base_no_ext = os.path.splitext(base)[0]
-            # Try splitting by common delimiters like _, -, space before question indicators
             for sep in ['_', '-', ' ']:
                 if sep in base_no_ext:
                     chunks = base_no_ext.split(sep)
-                    # if the last chunk looks like a question number (e.g. q1, assignment1), strip it
                     if re.match(r'^(q\d+|ans\d+|assignment|part)', chunks[-1], re.IGNORECASE):
                         return sep.join(chunks[:-1])
             return base_no_ext
 
-        student_files_map = {} # student_name -> list of file objects
+        student_files_map = {}
 
         if ai_upload_choice == "Individual Files / Student ZIP Archives (.zip)":
-            ai_files = st.file_uploader("Upload Student Submission Files or Batch ZIP (supports multi-file ZIPs per student)", type=list(supported_exts) + ["zip"], accept_multiple_files=True, max_upload_size=100, key=f"ai_files_{rc}")
+            ai_files = st.file_uploader("Upload Student Submission Files or Batch ZIP", type=list(supported_exts) + ["zip"], accept_multiple_files=True, max_upload_size=100, key=f"ai_files_{rc}")
             if ai_files:
                 for f in ai_files:
                     if f.name.lower().endswith('.zip'):
@@ -983,7 +977,7 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                                     if zname.lower().endswith(supported_exts) and not zname.startswith('__MACOSX/'):
                                         with z.open(zname) as zf:
                                             b = io.BytesIO(zf.read())
-                                            b.name = zname # keep path for student grouping
+                                            b.name = zname
                                             s_name = parse_student_name_from_path(zname)
                                             if s_name not in student_files_map:
                                                 student_files_map[s_name] = []
@@ -1006,9 +1000,9 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                         student_files_map[s_name].append(f)
 
         if student_files_map and rubric_file and instructions_file:
-            st.info(f"Grouped into {len(student_files_map)} unique student submission profiles ready for AI evaluation.")
+            st.info(f"Grouped into {len(student_files_map)} unique student submission profiles ready for evaluation.")
             
-            if st.button("🚀 Run AI Rubric Evaluation & Grading", type="primary", key=f"run_ai_grading_{rc}"):
+            if st.button("🚀 Run AI Rubric Evaluation & Integrated Plagiarism Check", type="primary", key=f"run_ai_grading_{rc}"):
                 try:
                     genai.configure(api_key=user_gemini_key.strip())
                     model = genai.GenerativeModel("gemini-3.5-flash")
@@ -1016,14 +1010,33 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                     rubric_text, rubric_imgs = extract_text_and_images_from_file(rubric_file, rubric_file.name.lower())
                     inst_text, inst_imgs = extract_text_and_images_from_file(instructions_file, instructions_file.name.lower())
 
-                    # --- FETCH HISTORICAL AI GRADES FROM VAULT IF CUMULATIVE ---
+                    # Optional Plagiarism Similarity Mapping
+                    similarity_scores_map = {}
+                    if run_plagiarism_with_ai and len(student_files_map) >= 2:
+                        all_student_texts = []
+                        all_student_names = list(student_files_map.keys())
+                        for s_name in all_student_names:
+                            blob = ""
+                            for sf in student_files_map[s_name]:
+                                t_content, _ = extract_text_and_images_from_file(sf, sf.name.lower())
+                                blob += t_content + " "
+                            all_student_texts.append(blob)
+                        
+                        vectorizer = TfidfVectorizer(stop_words='english', ngram_range=(min_words, max_words), max_features=10000)
+                        tfidf_mat = vectorizer.fit_transform(all_student_texts)
+                        sim_mat = cosine_similarity(tfidf_mat) * 100
+                        
+                        for idx, s_name in enumerate(all_student_names):
+                            # Max similarity against any other peer
+                            peer_scores = [sim_mat[idx][j] for j in range(len(all_student_names)) if idx != j]
+                            similarity_scores_map[s_name] = round(max(peer_scores), 1) if peer_scores else 0.0
+
+                    # Fetch historical AI grades if cumulative
                     historical_grades = []
                     if ai_is_cumulative:
                         try:
                             conn = sqlite3.connect(DB_FILE)
                             cursor = conn.cursor()
-                            cursor.execute("select student_name, grades_json, exemplary_grade from ai_grades_vault where lms_number = ? and assignment_name = ?", (ai_lms_val, ai_assign_val))
-                            # Note table schema has exemplary_badge
                             cursor.execute("select student_name, grades_json, exemplary_badge from ai_grades_vault where lms_number = ? and assignment_name = ?", (ai_lms_val, ai_assign_val))
                             vault_rows = cursor.fetchall()
                             conn.close()
@@ -1033,7 +1046,7 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                                     parsed_g = json.loads(g_json)
                                 except Exception:
                                     parsed_g = {}
-                                historical_grades.append({"Student Name": f"📁 [Past] {s_name}", **parsed_g, "Exemplary Badge": badge})
+                                historical_grades.append({"Student Name": f"📁 [Past] {s_name}", **parsed_g, "Max Peer Similarity (%)": "N/A (Vault)", "Exemplary Badge": badge})
                         except Exception:
                             pass
 
@@ -1044,7 +1057,7 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                     total_students = len(student_files_map)
 
                     for idx, (student_name, file_list) in enumerate(student_files_map.items()):
-                        status_text.text(f"Evaluating student {idx+1} of {total_students}: {student_name} (Holistic multi-file & vision processing)...")
+                        status_text.text(f"Evaluating student {idx+1} of {total_students}: {student_name} (AI Rubric & Vision)...")
                         progress_bar.progress(int(100 * (idx + 1) / total_students))
 
                         combined_student_text = ""
@@ -1090,16 +1103,16 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                         row_data = {"Student Name": f"🆕 [New] {student_name}" if ai_is_cumulative else student_name}
                         row_data.update(parsed_json)
                         
-                        # Placeholder for badge allocation later
+                        # Attach integrated plagiarism max similarity score if enabled
+                        max_sim_val = similarity_scores_map.get(student_name, 0.0)
+                        row_data["Max Peer Similarity (%)"] = f"{max_sim_val}%" if run_plagiarism_with_ai else "Disabled"
                         row_data["Exemplary Badge"] = "Pending"
                         new_evaluation_results.append(row_data)
 
-                        # Save to vault if cumulative
                         if ai_is_cumulative:
                             try:
                                 conn = sqlite3.connect(DB_FILE)
                                 cursor = conn.cursor()
-                                # remove old if re-grading
                                 cursor.execute("delete from ai_grades_vault where lms_number = ? and assignment_name = ? and student_name = ?", (ai_lms_val, ai_assign_val, student_name))
                                 cursor.execute("""
                                     insert into ai_grades_vault (lms_number, assignment_name, student_name, grades_json, exemplary_badge, timestamp, expiry_date)
@@ -1112,13 +1125,10 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
 
                     progress_bar.empty()
                     status_text.empty()
-                    st.success("AI Rubric Evaluation Complete!")
+                    st.success("AI Rubric Evaluation & Plagiarism Integration Complete!")
 
-                    # Combine historical + new for badge ranking
                     all_evals = historical_grades + new_evaluation_results
                     
-                    # Sort by total score to award top percentage Exemplary Badges
-                    # Extract numeric score if possible, else 0
                     def extract_score_val(item):
                         score_field = item.get("Total Score", "0")
                         match = re.search(r'([\d.]+)', str(score_field))
@@ -1134,26 +1144,25 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                             ev["Exemplary Badge"] = "-"
 
                     df_grades = pd.DataFrame(all_evals)
-                    st.subheader("📊 Comprehensive Student Grades & Rubric Breakdown")
+                    st.subheader("📊 Comprehensive Student Grades & Plagiarism Summary")
                     st.dataframe(df_grades, use_container_width=True)
 
                     out_excel = io.BytesIO()
                     with pd.ExcelWriter(out_excel, engine='openpyxl') as writer:
-                        df_grades.to_excel(writer, index=False, sheet_name='AI Grades')
+                        df_grades.to_excel(writer, index=False, sheet_name='AI Grades & Plagiarism')
                     
                     st.download_button(
-                        label="📥 Download AI Grading Table (Excel)",
+                        label="📥 Download Combined Grading & Plagiarism Table (Excel)",
                         data=out_excel.getvalue(),
-                        file_name=f"ai_rubric_grading_report_{ai_assign_val.replace(' ', '_')}.xlsx",
+                        file_name=f"ai_grading_and_plagiarism_report_{ai_assign_val.replace(' ', '_')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         key=f"dl_ai_excel_{rc}"
                     )
 
                 except Exception as ex:
-                    st.error(f"An error occurred during AI evaluation: {ex}")
+                    st.error(f"An error occurred during evaluation: {ex}")
         elif student_files_map and (not rubric_file or not instructions_file):
-            st.warning("Please upload both the **Grading Rubric** and **Assignment Instructions** to run AI evaluation.")
-
+            st.warning("Please upload both the **Grading Rubric** and **Assignment Instructions** to run evaluation.")
 
 # ==========================================
 # MODE 4: REPORT HISTORY DASHBOARD & ADMIN AUDIT TRAIL
