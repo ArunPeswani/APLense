@@ -269,7 +269,7 @@ st.sidebar.markdown("---")
 
 st.sidebar.subheader("🔑 AI Grader API Key (BYOK)")
 stored_key = get_user_api_key(user_email)
-user_gemini_key = st.sidebar.text_input("Google AI Studio API Key", value=stored_key, type="password", key=f"user_gemini_key_{rc}", help="Enter your free Google AI Studio key once. It is securely saved for your account.")
+user_gemini_key = st.sidebar.text_input("Google AI Studio API Key", value=stored_key, type="default", autocomplete="off", key=f"user_gemini_key_{rc}", help="Enter your free Google AI Studio key once. It is securely saved for your account.")
 if user_gemini_key != stored_key:
     save_user_api_key(user_email, user_gemini_key.strip())
     st.sidebar.success("API key saved securely!")
