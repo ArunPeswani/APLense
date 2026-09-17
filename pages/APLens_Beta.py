@@ -102,6 +102,8 @@ def init_local_db():
     cursor.execute("""
         create table if not exists authorized_users (
             email text primary key,
+            name text,
+            requested_at text,
             approved_at text
         )
     """)
@@ -114,8 +116,8 @@ def init_local_db():
             timestamp text
         )
     """)
-    cursor.execute("insert or ignore into authorized_users (email, approved_at) values (?, ?)", 
-                   ("arunpeswani@gmail.com", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    cursor.execute("insert or ignore into authorized_users (email, name, requested_at, approved_at) values (?, ?, ?, ?)", 
+                   ("arunpeswani@gmail.com", "Arun Peswani", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
     conn.close()
 
@@ -1243,86 +1245,169 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
 # ==========================================
 elif is_admin and app_mode == "🔐 Access Requests Management":
     st.header("🔐 Access Requests Management")
-    st.write("Review, approve, or manage pending user access requests for APLens Beta.")
+    st.write("Review, approve, or manage user access requests and registered users for APLens Beta.")
 
-    col_h_btn1, col_h_btn2 = st.columns([0.2, 0.8])
-    with col_h_btn1:
-        if st.button("🔄 Refresh Requests", type="secondary", use_container_width=True, key=f"refresh_reqs_{rc}"):
-            st.rerun()
+    tab_pending, tab_registered = st.tabs(["⏳ Pending Requests", "👥 Registered Users"])
 
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        df_requests = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
-        conn.close()
-    except Exception:
-        df_requests = pd.DataFrame()
-
-    if df_requests.empty:
-        st.info("✅ No pending access requests at this time.")
-    else:
-        st.write(f"Found **{len(df_requests)} pending request(s)**.")
-
-        master_select_key = f"master_select_all_{rc}"
-        if master_select_key not in st.session_state:
-            st.session_state[master_select_key] = False
-
-        # Master select/unselect toggle handler before widgets render
-        col_master_chk, _ = st.columns([0.25, 0.75])
-        with col_master_chk:
-            master_toggle = st.checkbox("Select / Unselect All", value=st.session_state[master_select_key], key=f"master_toggle_btn_{rc}")
-            if master_toggle != st.session_state[master_select_key]:
-                st.session_state[master_select_key] = master_toggle
-                for idx, row in df_requests.iterrows():
-                    st.session_state[f"req_chk_{row['id']}_{rc}"] = master_toggle
+    with tab_pending:
+        col_h_btn1, col_h_btn2 = st.columns([0.25, 0.75])
+        with col_h_btn1:
+            if st.button("🔄 Refresh Requests", type="secondary", use_container_width=True, key=f"refresh_reqs_{rc}"):
                 st.rerun()
 
-        approval_rows = []
-        for idx, row in df_requests.iterrows():
-            chk_key = f"req_chk_{row['id']}_{rc}"
-            if chk_key not in st.session_state:
-                st.session_state[chk_key] = st.session_state[master_select_key]
-            
-            approval_rows.append({
-                "id": row["id"],
-                "Select": st.checkbox("", value=st.session_state[chk_key], key=chk_key),
-                "Name": row["name"],
-                "Email ID": row["email"],
-                "Remarks": row["remarks"],
-                "Timestamp": row["timestamp"]
-            })
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            df_requests = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
+            conn.close()
+        except Exception:
+            df_requests = pd.DataFrame()
 
-        df_display = pd.DataFrame(approval_rows)
-        st.dataframe(df_display[["Select", "Name", "Email ID", "Remarks", "Timestamp"]], use_container_width=True)
+        if df_requests.empty:
+            st.info("✅ No pending access requests at this time.")
+        else:
+            st.write(f"Found **{len(df_requests)} pending request(s)**.")
 
-        col_act1, col_act2, _ = st.columns([1, 1, 1])
-        with col_act1:
-            approve_selected = st.button("Approve Selected", type="primary", use_container_width=True, key=f"approve_sel_{rc}")
-        with col_act2:
-            approve_all = st.button("Approve All", type="secondary", use_container_width=True, key=f"approve_all_{rc}")
+            master_select_key = f"master_select_all_{rc}"
+            if master_select_key not in st.session_state:
+                st.session_state[master_select_key] = False
 
-        if approve_selected or approve_all:
-            emails_to_approve = []
-            for row in approval_rows:
-                if approve_all or st.session_state.get(f"req_chk_{row['id']}_{rc}", False):
-                    emails_to_approve.append((row["email"], row["id"]))
-
-            if not emails_to_approve:
-                st.warning("No requests selected for approval.")
-            else:
-                try:
-                    conn = sqlite3.connect(DB_FILE)
-                    cursor = conn.cursor()
-                    for email, req_id in emails_to_approve:
-                        cursor.execute("insert or ignore into authorized_users (email, approved_at) values (?, ?)", 
-                                       (email.lower(), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                        cursor.execute("delete from access_requests where id = ?", (req_id,))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"Successfully approved {len(emails_to_approve)} user(s)!")
-                    time.sleep(1.5)
+            col_master_chk, _ = st.columns([0.25, 0.75])
+            with col_master_chk:
+                master_toggle = st.checkbox("Select / Unselect All", value=st.session_state[master_select_key], key=f"master_toggle_btn_{rc}")
+                if master_toggle != st.session_state[master_select_key]:
+                    st.session_state[master_select_key] = master_toggle
+                    for idx, row in df_requests.iterrows():
+                        st.session_state[f"req_chk_{row['id']}_{rc}"] = master_toggle
                     st.rerun()
-                except Exception as ex:
-                    st.error(f"Error approving requests: {ex}")
+
+            approval_rows = []
+            for idx, row in df_requests.iterrows():
+                chk_key = f"req_chk_{row['id']}_{rc}"
+                if chk_key not in st.session_state:
+                    st.session_state[chk_key] = st.session_state[master_select_key]
+                
+                approval_rows.append({
+                    "Select": st.checkbox("", value=st.session_state[chk_key], key=chk_key),
+                    "Name": row["name"],
+                    "Email ID": row["email"],
+                    "Remarks": row["remarks"],
+                    "Timestamp": row["timestamp"]
+                })
+
+            df_display = pd.DataFrame(approval_rows)
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+
+            col_act1, col_act2, _ = st.columns([1, 1, 1])
+            with col_act1:
+                approve_selected = st.button("Approve Selected", type="primary", use_container_width=True, key=f"approve_sel_{rc}")
+            with col_act2:
+                approve_all = st.button("Approve All", type="secondary", use_container_width=True, key=f"approve_all_{rc}")
+
+            if approve_selected or approve_all:
+                emails_to_approve = []
+                for idx, row in df_requests.iterrows():
+                    chk_val = st.session_state.get(f"req_chk_{row['id']}_{rc}", False)
+                    if approve_all or chk_val:
+                        emails_to_approve.append((row["email"], row["name"], row["timestamp"], row["id"]))
+
+                if not emails_to_approve:
+                    st.warning("No requests selected for approval.")
+                else:
+                    try:
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        for email, name, req_ts, req_id in emails_to_approve:
+                            cursor.execute("insert or replace into authorized_users (email, name, requested_at, approved_at) values (?, ?, ?, ?)", 
+                                           (email.lower(), name, req_ts, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                            cursor.execute("delete from access_requests where id = ?", (req_id,))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Successfully approved {len(emails_to_approve)} user(s)!")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"Error approving requests: {ex}")
+
+    with tab_registered:
+        st.subheader("👥 Approved & Registered Users")
+        
+        col_reg_btn1, _ = st.columns([0.25, 0.75])
+        with col_reg_btn1:
+            if st.button("🔄 Refresh Registered Users", type="secondary", use_container_width=True, key=f"refresh_regs_{rc}"):
+                st.rerun()
+
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            df_registered = pd.read_sql_query("select email, name, requested_at, approved_at from authorized_users order by approved_at desc", conn)
+            conn.close()
+        except Exception:
+            df_registered = pd.DataFrame()
+
+        if df_registered.empty:
+            st.info("No registered users found.")
+        else:
+            st.write(f"Found **{len(df_registered)} registered user(s)**.")
+
+            master_reg_key = f"master_reg_select_all_{rc}"
+            if master_reg_key not in st.session_state:
+                st.session_state[master_reg_key] = False
+
+            col_reg_chk, _ = st.columns([0.25, 0.75])
+            with col_reg_chk:
+                master_reg_toggle = st.checkbox("Select / Unselect All", value=st.session_state[master_reg_key], key=f"master_reg_toggle_btn_{rc}")
+                if master_reg_toggle != st.session_state[master_reg_key]:
+                    st.session_state[master_reg_key] = master_reg_toggle
+                    for idx, row in df_registered.iterrows():
+                        st.session_state[f"reg_chk_{idx}_{rc}"] = master_reg_toggle
+                    st.rerun()
+
+            reg_rows = []
+            for idx, row in df_registered.iterrows():
+                reg_chk_key = f"reg_chk_{idx}_{rc}"
+                if reg_chk_key not in st.session_state:
+                    st.session_state[reg_chk_key] = st.session_state[master_reg_key]
+                
+                # Prevent unregistering super admin arunpeswani@gmail.com by disabling checkbox or protecting logic
+                is_admin_user = row["email"].lower() == "arunpeswani@gmail.com"
+                
+                reg_rows.append({
+                    "Select": False if is_admin_user else st.checkbox("", value=st.session_state[reg_chk_key], key=reg_chk_key, disabled=is_admin_user),
+                    "Name": row["name"] or "N/A",
+                    "Email ID": row["email"],
+                    "Request Timestamp": row["requested_at"] or "N/A",
+                    "Approval Timestamp": row["approved_at"] or "N/A"
+                })
+
+            df_reg_display = pd.DataFrame(reg_rows)
+            st.dataframe(df_reg_display, use_container_width=True, hide_index=True)
+
+            col_unreg1, _ = st.columns([1, 2])
+            with col_unreg1:
+                unregister_selected = st.button("Unregister Selected Users", type="primary", use_container_width=True, key=f"unreg_sel_{rc}")
+
+            if unregister_selected:
+                emails_to_unregister = []
+                for idx, row in df_registered.iterrows():
+                    if row["email"].lower() == "arunpeswani@gmail.com":
+                        continue
+                    if st.session_state.get(f"reg_chk_{idx}_{rc}", False):
+                        emails_to_unregister.append(row["email"])
+
+                if not emails_to_unregister:
+                    st.warning("No valid users selected for unregistering.")
+                else:
+                    try:
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        for email in emails_to_unregister:
+                            cursor.execute("delete from authorized_users where email = ?", (email.lower(),))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Successfully unregistered {len(emails_to_unregister)} user(s)!")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"Error unregistering users: {ex}")
 
 # ==========================================
 # MODE 5: REPORT HISTORY DASHBOARD & ADMIN AUDIT TRAIL
@@ -1456,7 +1541,7 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("1. Gated Google Authentication & Access Control")
     st.write(
         "* **Secure Whitelist Approval:** Only pre-approved email addresses can access APLens Beta. New users must submit an approval request with their name and remarks upon signing in.\n"
-        "* **Admin Access Management:** Arun Peswani (`arunpeswani@gmail.com`) can review, select, and approve incoming requests in bulk or individually via the Access Requests Management panel."
+        "* **Admin Access Management:** Arun Peswani (`arunpeswani@gmail.com`) can review, select, and approve incoming requests, as well as manage or unregister active users via the Access Requests Management panel."
     )
 
     st.subheader("2. AI Grader, Rate-Limiting & Multimodal Evaluation")
