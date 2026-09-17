@@ -171,6 +171,8 @@ if "saved_reports" not in st.session_state:
     st.session_state.saved_reports = []
 if "edit_email_toggled" not in st.session_state:
     st.session_state.edit_email_toggled = False
+if "reg_master_select" not in st.session_state:
+    st.session_state.reg_master_select = False
 
 rc = st.session_state.reset_count_beta
 
@@ -1250,7 +1252,7 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
     tab_pending, tab_registered = st.tabs(["⏳ Pending Requests", "👥 Registered Users"])
 
     with tab_pending:
-        col_h_btn1, col_h_btn2 = st.columns([0.25, 0.75])
+        col_h_btn1, _ = st.columns([0.25, 0.75])
         with col_h_btn1:
             if st.button("🔄 Refresh Requests", type="secondary", use_container_width=True, key=f"refresh_reqs_{rc}"):
                 st.rerun()
@@ -1267,10 +1269,20 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
         else:
             st.write(f"Found **{len(df_requests)} pending request(s)**.")
 
+            def pending_toggle_callback():
+                st.session_state.pending_master_select = st.session_state[f"pending_master_toggle_{rc}"]
+
+            st.checkbox(
+                "Select / Unselect All", 
+                value=st.session_state.get("pending_master_select", False), 
+                key=f"pending_master_toggle_{rc}",
+                on_change=pending_toggle_callback
+            )
+
             editor_rows = []
             for idx, row in df_requests.iterrows():
                 editor_rows.append({
-                    "Select": False,
+                    "Select": st.session_state.get("pending_master_select", False),
                     "id": row["id"],
                     "Name": row["name"],
                     "Email ID": row["email"],
@@ -1351,11 +1363,23 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
         else:
             st.write(f"Found **{len(df_registered)} registered user(s)**.")
 
+            def reg_toggle_callback():
+                st.session_state.reg_master_select = st.session_state[f"reg_master_toggle_{rc}"]
+
+            st.checkbox(
+                "Select / Unselect All", 
+                value=st.session_state.get("reg_master_select", False), 
+                key=f"reg_master_toggle_{rc}",
+                on_change=reg_toggle_callback
+            )
+
             reg_editor_rows = []
             for idx, row in df_registered.iterrows():
                 is_admin_user = row["email"].lower() == "arunpeswani@gmail.com"
+                # Admin user cannot be selected
+                sel_val = False if is_admin_user else st.session_state.get("reg_master_select", False)
                 reg_editor_rows.append({
-                    "Select": False,
+                    "Select": sel_val,
                     "Name": row["name"] or "N/A",
                     "Email ID": row["email"],
                     "Request Timestamp": row["requested_at"] or "N/A",
@@ -1538,7 +1562,7 @@ elif app_mode == "💡 User Guide & Help":
     st.subheader("1. Gated Google Authentication & Access Control")
     st.write(
         "* **Secure Whitelist Approval:** Only pre-approved email addresses can access APLens Beta. New users must submit an approval request with their name and remarks upon signing in.\n"
-        "* **Admin Access Management:** Arun Peswani (`arunpeswani@gmail.com`) can review, select, and approve or delete pending incoming requests, as well as unregister active users (moving them back to pending requests) via the Access Requests Management panel."
+        "* **Admin Access Management:** Arun Peswani (`arunpeswani@gmail.com`) can review, select, and approve incoming requests, as well as manage or unregister active users via the Access Requests Management panel."
     )
 
     st.subheader("2. AI Grader, Rate-Limiting & Multimodal Evaluation")
