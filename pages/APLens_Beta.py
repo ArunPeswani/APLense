@@ -3,6 +3,7 @@ import os
 import zipfile
 import datetime
 import sqlite3
+import json
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -13,6 +14,7 @@ import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import difflib
+import google.generativeai as genai
 
 # OCR, Image Processing & HEIF Support Imports
 from PIL import Image, ImageEnhance
@@ -21,7 +23,7 @@ import pytesseract
 from pillow_heif import register_heif_opener
 register_heif_opener()
 
-st.set_page_config(page_title="APLens Beta - Plagiarism & Matcher Suite", page_icon="🧪", layout="centered")
+st.set_page_config(page_title="APLens Beta - Plagiarism & AI Grader Suite", page_icon="🧪", layout="centered")
 
 # --- LOCAL SQLITE DATABASE INITIALIZATION ---
 DB_FILE = "aplens_audit.db"
@@ -79,6 +81,27 @@ def init_local_db():
             assignment_name text,
             reference_text text,
             timestamp text
+        )
+    """)
+    # Table for Secure Grader API Key Vault (BYOK Pattern)
+    cursor.execute("""
+        create table if not exists grader_api_keys (
+            email text primary key,
+            api_key text,
+            updated_at text
+        )
+    """)
+    # Table for Cumulative AI Grading Vault & Reports
+    cursor.execute("""
+        create table if not exists ai_grades_vault (
+            id integer primary key autoincrement,
+            lms_number text,
+            assignment_name text,
+            student_name text,
+            grades_json text,
+            exemplary_badge text,
+            timestamp text,
+            expiry_date text
         )
     """)
     conn.commit()
@@ -156,10 +179,10 @@ if "action" in st.query_params and st.query_params["action"] == "login":
 # GATED LOGIN CHECK: LAND ON LOGIN PAGE FIRST
 # ==========================================
 if not user_is_logged_in:
-    st.title("🧪 APLens Beta - Plagiarism Suite")
+    st.title("🧪 APLens Beta - Plagiarism & AI Grader Suite")
     st.markdown("---")
     
-    st.info("🔒 **Authentication Required:** Please sign in with your Google account to access the APLens Beta suite, run comparisons, and view reports.")
+    st.info("🔒 **Authentication Required:** Please sign in with your Google account to access the APLens Beta suite, run AI grading, and view reports.")
     
     col_login1, col_login2 = st.columns([1, 1])
     with col_login1:
@@ -186,7 +209,7 @@ if not user_is_logged_in:
 header_col1, header_col2 = st.columns([0.6, 0.4])
 
 with header_col1:
-    st.title("🧪 APLens Beta - Plagiarism Suite")
+    st.title("🧪 APLens Beta Suite")
 
 with header_col2:
     avatar_col, menu_col = st.columns([0.3, 0.7])
@@ -210,14 +233,46 @@ with header_col2:
             if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_btn_{rc}"):
                 st.logout()
 
+# --- RETRIEVE OR SAVE PERSONAL GEMINI API KEY (BYOK) ---
+def get_user_api_key(email):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("select api_key from grader_api_keys where email = ?", (email,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else ""
+    except Exception:
+        return ""
+
+def save_user_api_key(email, key):
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("insert or replace into grader_api_keys (email, api_key, updated_at) values (?, ?, ?)", 
+                       (email, key, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
 # ==========================================
 # SIDEBAR SETUP
 # ==========================================
 app_mode = st.sidebar.radio(
     "Navigation", 
-    ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "📁 Report History Dashboard", "💡 User Guide & Help"], 
+    ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "🤖 AI Grader & Rubric Evaluation", "📁 Report History Dashboard", "💡 User Guide & Help"], 
     key=f"nav_mode_{rc}"
 )
+
+st.sidebar.markdown("---")
+
+st.sidebar.subheader("🔑 AI Grader API Key (BYOK)")
+stored_key = get_user_api_key(user_email)
+user_gemini_key = st.sidebar.text_input("Google AI Studio API Key", value=stored_key, type="password", key=f"user_gemini_key_{rc}", help="Enter your free Google AI Studio key once. It is securely saved for your account.")
+if user_gemini_key != stored_key:
+    save_user_api_key(user_email, user_gemini_key.strip())
+    st.sidebar.success("API key saved securely!")
 
 st.sidebar.markdown("---")
 
@@ -230,11 +285,12 @@ st.sidebar.markdown("---")
 
 st.sidebar.subheader("Report History Settings")
 save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_toggle_{rc}")
-retention_intervals = ["1 day", "1 week", "10 days", "A Fortnight", "3 weeks", "A Month"]
-selected_interval = st.sidebar.selectbox("Retention Period", retention_intervals, index=1, key=f"ret_interval_{rc}")
+retention_intervals = ["60 days", "1 day", "1 week", "10 days", "A Fortnight", "3 weeks", "A Month", "90 days"]
+selected_interval = st.sidebar.selectbox("Retention Period", retention_intervals, index=0, key=f"ret_interval_{rc}")
 
-interval_days_map = {"1 day": 1, "1 week": 7, "10 days": 10, "A Fortnight": 14, "3 weeks": 21, "A Month": 30}
-expiry_date = (datetime.datetime.now() + datetime.timedelta(days=interval_days_map.get(selected_interval, 7))).strftime("%Y-%m-%d")
+interval_days_map = {"60 days": 60, "1 day": 1, "1 week": 7, "10 days": 10, "A Fortnight": 14, "3 weeks": 21, "A Month": 30, "90 days": 90}
+expiry_days = interval_days_map.get(selected_interval, 60)
+expiry_date = (datetime.datetime.now() + datetime.timedelta(days=expiry_days)).strftime("%Y-%m-%d")
 st.sidebar.caption(f"📅 Calculated auto-deletion date: **{expiry_date}**")
 
 st.sidebar.markdown("---")
@@ -271,8 +327,9 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "Your data remains completely private to your active session and is discarded immediately after use."
     )
 
-def extract_text_from_file_obj(file_obj, filename_lower):
+def extract_text_and_images_from_file(file_obj, filename_lower):
     text = ""
+    images_list = []
     if hasattr(file_obj, 'seek'):
         file_obj.seek(0)
     file_bytes = file_obj.getvalue() if hasattr(file_obj, 'getvalue') else file_obj.read()
@@ -284,10 +341,13 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 if extracted:
                     text += extracted + " "
             
+            pil_images = convert_from_bytes(file_bytes)
+            for img in pil_images:
+                images_list.append(img)
+            
             if len(text.strip()) < 15:
-                images = convert_from_bytes(file_bytes)
                 ocr_text = ""
-                for img in images:
+                for img in pil_images:
                     img_gray = img.convert('L')
                     img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
                     ocr_text += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + " "
@@ -317,26 +377,25 @@ def extract_text_from_file_obj(file_obj, filename_lower):
                 text += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " "
                 
         elif filename_lower.endswith(('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp')):
-            image = Image.open(io.BytesIO(file_bytes)).convert('L')
-            image = ImageEnhance.Contrast(image).enhance(2.0)
-            text = pytesseract.image_to_string(image, lang='hin+eng')
+            image = Image.open(io.BytesIO(file_bytes)).convert('RGB')
+            images_list.append(image)
+            text = pytesseract.image_to_string(image.convert('L'), lang='hin+eng')
             
     except Exception as e:
         pass
     
     if not text.strip():
         text = f"document_content_fallback_{filename_lower}"
-    return text
+    return text, images_list
 
 
 # ==========================================
-# MODE 1: PLAGIARISM CHECKER (CONDITIONAL CUMULATIVE VAULT + PERSISTENT INSTRUCTIONS)
+# MODE 1: PLAGIARISM CHECKER
 # ==========================================
 if app_mode == "Plagiarism Checker":
     st.header("File Similarity Matrix Analysis")
     st.write("Upload student submissions. If LMS Number and Assignment Name are provided, submissions will automatically be compared against historical submissions stored for that specific course and assignment.")
 
-    # Side-by-side inputs for LMS Number and Assignment Name
     col_lms1, col_lms2 = st.columns(2)
     with col_lms1:
         lms_number_input = st.text_input("🏫 LMS Number", placeholder="e.g., 48921", key=f"lms_num_{rc}")
@@ -347,10 +406,9 @@ if app_mode == "Plagiarism Checker":
     assign_val = assignment_name_input.strip()
     is_cumulative = bool(lms_val and assign_val)
 
-    # --- HANDLE PERSISTENT ASSIGNMENT INSTRUCTIONS / SYLLABUS ---
     global_reference_text = ""
     if reference_file:
-        global_reference_text = extract_text_from_file_obj(reference_file, reference_file.name.lower())
+        global_reference_text, _ = extract_text_and_images_from_file(reference_file, reference_file.name.lower())
         if is_cumulative:
             try:
                 conn = sqlite3.connect(DB_FILE)
@@ -378,7 +436,6 @@ if app_mode == "Plagiarism Checker":
         except Exception:
             pass
 
-    # Helper caption showing previously used LMS numbers and assignment names
     try:
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -497,7 +554,7 @@ if app_mode == "Plagiarism Checker":
                 status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active)")
                 progress_bar.progress(30 + int(40 * (idx + 1) / total_to_process))
                 
-                txt = extract_text_from_file_obj(file, file.name.lower())
+                txt, _ = extract_text_and_images_from_file(file, file.name.lower())
                 
                 if global_reference_text.strip():
                     prompt_words = set(global_reference_text.split())
@@ -542,7 +599,6 @@ if app_mode == "Plagiarism Checker":
                     tfidf_matrix = vectorizer.fit_transform(documents)
                     similarity_matrix = (cosine_similarity(tfidf_matrix) * 100).tolist()
                 
-                # --- SAVE NEW FILES INTO VAULT IF CUMULATIVE ---
                 if is_cumulative and new_files_to_vault:
                     try:
                         conn = sqlite3.connect(DB_FILE)
@@ -568,7 +624,6 @@ if app_mode == "Plagiarism Checker":
                 st.session_state.analysis_type_run = analysis_mode_label
                 st.session_state.beta_course = f"LMS: {lms_val} | Assignment: {assign_val}" if is_cumulative else (assign_val or "General Assignment")
 
-                # Calculate metrics for logging
                 total_files = len(filenames)
                 flat_scores = [similarity_matrix[i][j] for i in range(total_files) for j in range(total_files) if i != j]
                 max_sim = max(flat_scores) if flat_scores else 0.0
@@ -576,7 +631,6 @@ if app_mode == "Plagiarism Checker":
                 flagged_pairs_count = sum(1 for score in flat_scores if score >= similarity_threshold)
                 current_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                # --- LOG USER ACTIVITY & SETTINGS TO LOCAL SQLITE ---
                 try:
                     conn = sqlite3.connect(DB_FILE)
                     cursor = conn.cursor()
@@ -628,7 +682,7 @@ if app_mode == "Plagiarism Checker":
 
         mcol1, mcol2, mcol3, mcol4 = st.columns(4)
         with mcol1:
-            st.metric("📁 Files Scanned", total_files)
+            st.metric("📁 Total Pool Files", total_files)
         with mcol2:
             st.metric("📈 Max Similarity", f"{max_sim:.1f}%")
         with mcol3:
@@ -642,7 +696,7 @@ if app_mode == "Plagiarism Checker":
             st.info(f"✅ **All clear:** No document pairs exceed the **{similarity_threshold}%** threshold limit.")
 
         st.subheader(f"Visual Heatmap ({run_label})")
-        st.write("💡 *Tip: Use the horizontal and vertical scrollbars around the chart to navigate the proportionate square matrix. Hover over any cell to see full names and exact scores.*")
+        st.write("💡 *Tip: Use scrollbars around the chart to navigate the matrix. Hover over any cell for exact scores.*")
         
         truncated_names = [name if len(name) <= 25 else name[:22] + "..." for name in filenames]
         chart_dimension = max(900, total_files * 35)
@@ -860,14 +914,284 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
     if not file1 or not file2:
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
 
+
+# ==========================================
+# MODE 3: AI GRADER & RUBRIC EVALUATION
+# ==========================================
+elif app_mode == "🤖 AI Grader & Rubric Evaluation":
+    st.header("🤖 AI Grader & Rubric Evaluation Suite")
+    st.write("Upload assignment instructions, a grading rubric, and student submission files (including ZIP archives containing multi-file submissions per student). Gemini will evaluate each student holistically and generate question scores and Exemplary Badges.")
+
+    if not user_gemini_key.strip():
+        st.warning("⚠️ Please enter your Google AI Studio API Key in the sidebar under **🔑 AI Grader API Key (BYOK)** to use the AI Grader.")
+    else:
+        # LMS & Assignment setup for cumulative AI grading vault
+        col_ai_lms1, col_ai_lms2 = st.columns(2)
+        with col_ai_lms1:
+            ai_lms_input = st.text_input("🏫 LMS Number", placeholder="e.g., 48921", key=f"ai_lms_{rc}")
+        with col_ai_lms2:
+            ai_assign_input = st.text_input("📝 Assignment Name", placeholder="e.g., Assignment A", key=f"ai_assign_{rc}")
+
+        ai_lms_val = ai_lms_input.strip()
+        ai_assign_val = ai_assign_input.strip()
+        ai_is_cumulative = bool(ai_lms_val and ai_assign_val)
+
+        ai_col1, ai_col2 = st.columns(2)
+        with ai_col1:
+            rubric_file = st.file_uploader("Upload Grading Rubric (.docx, .pdf, images)", type=list(supported_exts), key=f"ai_rubric_{rc}", max_upload_size=5)
+        with ai_col2:
+            instructions_file = st.file_uploader("Upload Assignment Instructions (.docx, .pdf, images)", type=list(supported_exts), key=f"ai_instructions_{rc}", max_upload_size=5)
+
+        st.markdown("---")
+        exemplary_badge_pct = st.slider("🏆 Exemplary Badge Allocation Top %", min_value=0, max_value=50, value=15, step=5, help="Percentage of top-performing students to be awarded Exemplary Badges.")
+        
+        run_plagiarism_with_ai = st.checkbox("🔍 Also Run Integrated Plagiarism Check on Submissions", value=True, help="Runs similarity matrix check alongside AI grading.")
+
+        st.markdown("---")
+        ai_upload_choice = st.radio("Student Submissions Upload Type", ["Individual Files / Student ZIP Archives (.zip)", "Direct Folder Selection"], key=f"ai_up_choice_{rc}")
+
+        # Helper to group files by student name
+        def parse_student_name_from_path(filename):
+            # Clean path separators
+            clean_name = filename.replace('\\', '/')
+            parts = clean_name.split('/')
+            if len(parts) > 1:
+                # If inside folder in ZIP (e.g. StudentName/Q1.docx)
+                return parts[0]
+            base = os.path.basename(clean_name)
+            # Remove extension
+            base_no_ext = os.path.splitext(base)[0]
+            # Try splitting by common delimiters like _, -, space before question indicators
+            for sep in ['_', '-', ' ']:
+                if sep in base_no_ext:
+                    chunks = base_no_ext.split(sep)
+                    # if the last chunk looks like a question number (e.g. q1, assignment1), strip it
+                    if re.match(r'^(q\d+|ans\d+|assignment|part)', chunks[-1], re.IGNORECASE):
+                        return sep.join(chunks[:-1])
+            return base_no_ext
+
+        student_files_map = {} # student_name -> list of file objects
+
+        if ai_upload_choice == "Individual Files / Student ZIP Archives (.zip)":
+            ai_files = st.file_uploader("Upload Student Submission Files or Batch ZIP (supports multi-file ZIPs per student)", type=list(supported_exts) + ["zip"], accept_multiple_files=True, max_upload_size=100, key=f"ai_files_{rc}")
+            if ai_files:
+                for f in ai_files:
+                    if f.name.lower().endswith('.zip'):
+                        try:
+                            with zipfile.ZipFile(f, 'r') as z:
+                                for zname in z.namelist():
+                                    if zname.lower().endswith(supported_exts) and not zname.startswith('__MACOSX/'):
+                                        with z.open(zname) as zf:
+                                            b = io.BytesIO(zf.read())
+                                            b.name = zname # keep path for student grouping
+                                            s_name = parse_student_name_from_path(zname)
+                                            if s_name not in student_files_map:
+                                                student_files_map[s_name] = []
+                                            student_files_map[s_name].append(b)
+                        except Exception as ex:
+                            st.error(f"Error reading ZIP: {ex}")
+                    else:
+                        s_name = parse_student_name_from_path(f.name)
+                        if s_name not in student_files_map:
+                            student_files_map[s_name] = []
+                        student_files_map[s_name].append(f)
+        else:
+            ai_dir_files = st.file_uploader("Select folder of student submissions", type=list(supported_exts), accept_multiple_files="directory", max_upload_size=5, key=f"ai_dir_{rc}")
+            if ai_dir_files:
+                for f in ai_dir_files:
+                    if '__MACOSX' not in f.name:
+                        s_name = parse_student_name_from_path(f.name)
+                        if s_name not in student_files_map:
+                            student_files_map[s_name] = []
+                        student_files_map[s_name].append(f)
+
+        if student_files_map and rubric_file and instructions_file:
+            st.info(f"Grouped into {len(student_files_map)} unique student submission profiles ready for AI evaluation.")
+            
+            if st.button("🚀 Run AI Rubric Evaluation & Grading", type="primary", key=f"run_ai_grading_{rc}"):
+                try:
+                    genai.configure(api_key=user_gemini_key.strip())
+                    model = genai.GenerativeModel("gemini-3.5-flash")
+
+                    rubric_text, rubric_imgs = extract_text_and_images_from_file(rubric_file, rubric_file.name.lower())
+                    inst_text, inst_imgs = extract_text_and_images_from_file(instructions_file, instructions_file.name.lower())
+
+                    # --- FETCH HISTORICAL AI GRADES FROM VAULT IF CUMULATIVE ---
+                    historical_grades = []
+                    if ai_is_cumulative:
+                        try:
+                            conn = sqlite3.connect(DB_FILE)
+                            cursor = conn.cursor()
+                            cursor.execute("select student_name, grades_json, exemplary_grade from ai_grades_vault where lms_number = ? and assignment_name = ?", (ai_lms_val, ai_assign_val))
+                            # Note table schema has exemplary_badge
+                            cursor.execute("select student_name, grades_json, exemplary_badge from ai_grades_vault where lms_number = ? and assignment_name = ?", (ai_lms_val, ai_assign_val))
+                            vault_rows = cursor.fetchall()
+                            conn.close()
+                            for r in vault_rows:
+                                s_name, g_json, badge = r[0], r[1], r[2]
+                                try:
+                                    parsed_g = json.loads(g_json)
+                                except Exception:
+                                    parsed_g = {}
+                                historical_grades.append({"Student Name": f"📁 [Past] {s_name}", **parsed_g, "Exemplary Badge": badge})
+                        except Exception:
+                            pass
+
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    new_evaluation_results = []
+                    total_students = len(student_files_map)
+
+                    for idx, (student_name, file_list) in enumerate(student_files_map.items()):
+                        status_text.text(f"Evaluating student {idx+1} of {total_students}: {student_name} (Holistic multi-file & vision processing)...")
+                        progress_bar.progress(int(100 * (idx + 1) / total_students))
+
+                        combined_student_text = ""
+                        combined_student_images = []
+
+                        for s_file in file_list:
+                            t_ext, i_ext = extract_text_and_images_from_file(s_file, s_file.name.lower())
+                            combined_student_text += f"\n--- File: {s_file.name} ---\n{t_ext}\n"
+                            combined_student_images.extend(i_ext)
+
+                        prompt = f"""
+                        You are an expert academic evaluator. Evaluate this student's submission bundle based strictly on the provided Assignment Instructions and Grading Rubric.
+                        
+                        ASSIGNMENT INSTRUCTIONS:
+                        {inst_text}
+                        
+                        GRADING RUBRIC & POINT BREAKDOWN:
+                        {rubric_text}
+                        
+                        STUDENT NAME: {student_name}
+                        STUDENT SUBMISSION FILES EXTRACT:
+                        {combined_student_text}
+                        
+                        TASK:
+                        1. Identify all questions or sub-parts specified in the rubric/instructions (e.g., 1, 2, 3 or 1a, 1b, 2a, etc.).
+                        2. Grade the submission for each question/sub-part.
+                        3. Return your response STRICTLY as a valid JSON object where keys are the question identifiers (e.g., "1a", "1b", "2", "Total Score") and values are the points awarded (numeric or string score like "8/10"). Include a key named "Feedback" summarizing qualitative remarks. Do NOT include markdown code fences like ```json in your raw response, just output the raw JSON object.
+                        """
+
+                        contents = [prompt] + combined_student_images + rubric_imgs + inst_imgs
+                        response = model.generate_content(contents)
+                        res_text = response.text.strip()
+
+                        if res_text.startswith("```"):
+                            res_text = re.sub(r"^```(?:json)?\n?", "", res_text)
+                            res_text = re.sub(r"\n?```$", "", res_text)
+
+                        try:
+                            parsed_json = json.loads(res_text)
+                        except Exception:
+                            parsed_json = {"Feedback": res_text, "Total Score": "Review Manually"}
+
+                        row_data = {"Student Name": f"🆕 [New] {student_name}" if ai_is_cumulative else student_name}
+                        row_data.update(parsed_json)
+                        
+                        # Placeholder for badge allocation later
+                        row_data["Exemplary Badge"] = "Pending"
+                        new_evaluation_results.append(row_data)
+
+                        # Save to vault if cumulative
+                        if ai_is_cumulative:
+                            try:
+                                conn = sqlite3.connect(DB_FILE)
+                                cursor = conn.cursor()
+                                # remove old if re-grading
+                                cursor.execute("delete from ai_grades_vault where lms_number = ? and assignment_name = ? and student_name = ?", (ai_lms_val, ai_assign_val, student_name))
+                                cursor.execute("""
+                                    insert into ai_grades_vault (lms_number, assignment_name, student_name, grades_json, exemplary_badge, timestamp, expiry_date)
+                                    values (?, ?, ?, ?, ?, ?, ?)
+                                """, (ai_lms_val, ai_assign_val, student_name, json.dumps(parsed_json), "Pending", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), expiry_date))
+                                conn.commit()
+                                conn.close()
+                            except Exception:
+                                pass
+
+                    progress_bar.empty()
+                    status_text.empty()
+                    st.success("AI Rubric Evaluation Complete!")
+
+                    # Combine historical + new for badge ranking
+                    all_evals = historical_grades + new_evaluation_results
+                    
+                    # Sort by total score to award top percentage Exemplary Badges
+                    # Extract numeric score if possible, else 0
+                    def extract_score_val(item):
+                        score_field = item.get("Total Score", "0")
+                        match = re.search(r'([\d.]+)', str(score_field))
+                        return float(match.group(1)) if match else 0.0
+
+                    all_evals.sort(key=extract_score_val, reverse=True)
+                    
+                    badge_count = max(1, int(len(all_evals) * (exemplary_badge_pct / 100.0)))
+                    for i, ev in enumerate(all_evals):
+                        if i < badge_count:
+                            ev["Exemplary Badge"] = "🌟 Awarded (Exemplary)"
+                        else:
+                            ev["Exemplary Badge"] = "-"
+
+                    df_grades = pd.DataFrame(all_evals)
+                    st.subheader("📊 Comprehensive Student Grades & Rubric Breakdown")
+                    st.dataframe(df_grades, use_container_width=True)
+
+                    out_excel = io.BytesIO()
+                    with pd.ExcelWriter(out_excel, engine='openpyxl') as writer:
+                        df_grades.to_excel(writer, index=False, sheet_name='AI Grades')
+                    
+                    st.download_button(
+                        label="📥 Download AI Grading Table (Excel)",
+                        data=out_excel.getvalue(),
+                        file_name=f"ai_rubric_grading_report_{ai_assign_val.replace(' ', '_')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"dl_ai_excel_{rc}"
+                    )
+
+                except Exception as ex:
+                    st.error(f"An error occurred during AI evaluation: {ex}")
+        elif student_files_map and (not rubric_file or not instructions_file):
+            st.warning("Please upload both the **Grading Rubric** and **Assignment Instructions** to run AI evaluation.")
+
+
 # ==========================================
 # MODE 4: REPORT HISTORY DASHBOARD & ADMIN AUDIT TRAIL
 # ==========================================
 elif app_mode == "📁 Report History Dashboard":
-    st.header("📁 Saved Report History Dashboard")
+    st.header("📁 Saved Report History & Course Data Management")
     
     is_admin = user_email.lower() == "arunpeswani@gmail.com"
     
+    # Manual Course Deletion Utility for Graders
+    st.subheader("🗑️ Manual Course / Assignment Data Purge")
+    st.write("Select or type an LMS Number and Assignment Name to completely clear its stored document vault, instructions, and AI grades.")
+    
+    col_purge1, col_purge2, col_purge3 = st.columns([1, 1, 1])
+    with col_purge1:
+        purge_lms = st.text_input("LMS Number to Purge", placeholder="e.g., 48921", key=f"purge_lms_{rc}")
+    with col_purge2:
+        purge_assign = st.text_input("Assignment Name to Purge", placeholder="e.g., Assignment A", key=f"purge_assign_{rc}")
+    with col_purge3:
+        st.markdown("<div style='padding-top: 24px;'></div>", unsafe_allow_html=True)
+        if st.button("🗑️ Purge Course Records", type="secondary", key=f"purge_btn_{rc}"):
+            if purge_lms.strip() and purge_assign.strip():
+                try:
+                    conn = sqlite3.connect(DB_FILE)
+                    cursor = conn.cursor()
+                    cursor.execute("delete from course_document_vault where lms_number = ? and assignment_name = ?", (purge_lms.strip(), purge_assign.strip()))
+                    cursor.execute("delete from course_metadata where lms_number = ? and assignment_name = ?", (purge_lms.strip(), purge_assign.strip()))
+                    cursor.execute("delete from ai_grades_vault where lms_number = ? and assignment_name = ?", (purge_lms.strip(), purge_assign.strip()))
+                    conn.commit()
+                    conn.close()
+                    st.success(f"Successfully purged all vaults and reports for LMS: {purge_lms} | Assignment: {purge_assign}")
+                except Exception as ex:
+                    st.error(f"Error purging records: {ex}")
+            else:
+                st.warning("Please provide both LMS Number and Assignment Name to purge.")
+
+    st.markdown("---")
+
     if is_admin:
         col_h1, col_h2 = st.columns([0.8, 0.2])
         with col_h2:
@@ -884,7 +1208,7 @@ elif app_mode == "📁 Report History Dashboard":
         else:
             col_dash1, col_dash2 = st.columns([0.8, 0.2])
             with col_dash2:
-                if st.button("🗑️ Clear All History", type="secondary", key=f"clear_hist_btn_{rc}"):
+                if st.button("🗑️ Clear All Local Session History", type="secondary", key=f"clear_hist_btn_{rc}"):
                     st.session_state.saved_reports = []
                     st.rerun()
 
@@ -959,46 +1283,31 @@ elif app_mode == "📁 Report History Dashboard":
 # ==========================================
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 Grader Guide & Help Center")
-    st.write("Welcome to the APLens Beta Suite. This comprehensive guide is designed for graders to help you navigate login security, cumulative late submissions, smart syllabus filtering, and report tracking.")
+    st.write("Welcome to the APLens Beta Suite. This comprehensive guide is designed for graders to help you navigate login security, cumulative late submissions, AI rubric grading, and report tracking.")
 
     st.markdown("---")
 
-    st.subheader("1. Gated Google Authentication")
+    st.subheader("1. Gated Google Authentication & BYOK API Key")
     st.write(
-        "* **Secure Access:** When you first open the APLens Beta page, you will encounter a login gate requiring you to sign in with your official Google account.\n"
-        "* **Why it matters:** This ensures that all grading activity, file scan counts, and comparison reports are securely logged and tied to your grader identity."
+        "* **Secure Access:** Sign in with your official Google account to access APLens Beta.\n"
+        "* **Bring Your Own Key (BYOK):** Paste your free Google AI Studio API key in the sidebar. It is securely saved to your account in SQLite so you only have to enter it once ever."
     )
 
-    st.subheader("2. Setting Up LMS Number & Assignment Name")
+    st.subheader("2. AI Grader & Multimodal Rubric Evaluation")
     st.write(
-        "Before uploading student submissions in the **Plagiarism Checker**, you will see two side-by-side input boxes at the top:\n"
-        "* **LMS Number:** Enter your course or LMS identifier (e.g., `48921`). Past LMS numbers will be remembered and displayed below the inputs for quick reference.\n"
-        "* **Assignment Name:** Enter the specific assignment title (e.g., `Assignment A`, `Assignment B`).\n"
-        "* **Why this structure matters:** This ensures that submissions are cleanly isolated. If you grade *Assignment B* under the same LMS number next month, the app won't mix up files from *Assignment A*."
+        "* **Multi-File ZIPs per Student:** If students submit multiple files packed in a ZIP, the app groups them by student name/folder automatically so each student gets one holistic row of evaluation.\n"
+        "* **Multimodal Vision:** Gemini reads embedded screenshots, code snippets, and diagrams inside student PDFs or Word docs.\n"
+        "* **Exemplary Badge Allocation:** Specify the top percentage of students to receive Exemplary Badges based on rubric performance."
     )
 
-    st.subheader("3. Handling Staggered & Late Submissions (Cumulative Vault)")
+    st.subheader("3. Cumulative Late Submissions, 60-Day Retention & Purge")
     st.write(
-        "Graders often check initial submissions before the due date, followed by trickle-in submissions as students submit late. APLens handles this seamlessly via a local database vault:\n"
-        "* **Conditional Cumulative Trigger:** Cumulative checking **only** runs if **both** the LMS Number and Assignment Name fields are filled out. If left blank, comparisons are treated as standard standalone runs.\n"
-        "* **First Batch Run:** When you grade initial submissions and provide the LMS and assignment codes, the app checks them and automatically saves their extracted text into the secure vault.\n"
-        "* **Later Batches (Late Submissions):** When you receive subsequent submissions, enter the **exact same LMS Number and Assignment Name** and upload the new files. The app will automatically fetch past submissions out of the vault and compare the new batch against historical papers."
+        "* **Conditional Cumulative Trigger:** Cumulative checking and AI grading history **only** load/save if **both** LMS Number and Assignment Name are provided.\n"
+        "* **Default 60-Day Retention:** Reports automatically schedule deletion after 60 days (customizable via the sidebar dropdown).\n"
+        "* **Manual Purge:** Use the Course Data Purge tool in the Report History dashboard to instantly delete records for a specific LMS number and assignment."
     )
 
-    st.subheader("4. Persistent Assignment Instructions & Syllabus Filtering")
+    st.subheader("4. Support & Contact")
     st.write(
-        "* **Avoiding False Positives:** Student papers often contain shared boilerplate text from the assignment prompt or syllabus.\n"
-        "* **How to use it:** Upload your instruction file in the sidebar under **Global Smart Filtering** when cumulative mode (LMS + Assignment) is active.\n"
-        "* **Permanent Storage & Auto-Loading:** APLens automatically saves those instructions to the database. In future runs for the same LMS/Assignment, the app automatically pulls the saved instructions out of the vault."
-    )
-
-    st.subheader("5. Deep Dive Matcher & Report History Dashboard")
-    st.write(
-        "* **Deep Dive Matcher:** Compare two specific documents side-by-side sheet-by-sheet (for Excel workbooks) or sentence-by-sentence to extract exact matching instances sharing 50% or more similarity.\n"
-        "* **Report History Dashboard:** Review your previously generated similarity reports. If you are logged in as the administrator (`arunpeswani@gmail.com`), you will also have access to the **User Activity Log** and **Deep Dive Log** tabs with instant CSV download buttons and a **Fetch Reports** refresh button."
-    )
-
-    st.subheader("6. Support & Contact")
-    st.write(
-        "If you encounter technical issues, database errors, or need assistance with batch archives, please contact **Arun Peswani**. Your feedback helps make APLens better for the grading team!"
+        "For assistance, please contact **Arun Peswani**."
     )
