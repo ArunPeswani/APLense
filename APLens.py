@@ -24,6 +24,18 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher Suite", page_icon="📑", layout="centered")
 
+# --- HIDE SIDEBAR IF NOT LOGGED IN ---
+user_is_logged_in = getattr(st.user, "is_logged_in", False)
+
+if not user_is_logged_in:
+    st.markdown("""
+        <style>
+            [data-testid="stSidebar"] {
+                display: none;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
 # --- LOCAL SQLITE DATABASE INITIALIZATION FOR ACCESS CONTROL ---
 DB_FILE = "aplens_audit.db"
 
