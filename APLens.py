@@ -35,18 +35,31 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher Suite", page_icon="📑", layout="centered")
 
-# --- OPTIMIZED CACHED NEON CONNECTION POOLING ---
+# --- ROBUST SELF-HEALING CONNECTION POOLING ---
 @st.cache_resource
 def get_db_connection():
+    return None
+
+def get_valid_db_connection():
+    conn = get_db_connection()
+    try:
+        if conn is not None:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+            return conn
+    except Exception:
+        pass
+    
     try:
         db_url = st.secrets["DATABASE_URL"]
-        return psycopg2.connect(db_url)
+        conn = psycopg2.connect(db_url)
+        return conn
     except Exception as e:
         st.error(f"Database connection error: {e}")
         return None
 
 def init_neon_db():
-    conn = get_db_connection()
+    conn = get_valid_db_connection()
     if not conn:
         return
     cursor = conn.cursor()
@@ -86,7 +99,7 @@ init_neon_db()
 @st.cache_data(ttl=30)
 def get_cached_requests_and_users():
     try:
-        conn = get_db_connection()
+        conn = get_valid_db_connection()
         if not conn:
             return pd.DataFrame(), pd.DataFrame()
         df_reqs = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
@@ -96,7 +109,7 @@ def get_cached_requests_and_users():
     except Exception:
         return pd.DataFrame(), pd.DataFrame()
 
-# Preload cache immediately on startup so admin pages open instantly without freezing
+# Preload cache immediately on startup
 get_cached_requests_and_users()
 
 # --- COMPACT SIDEBAR CSS & CUSTOM BADGES ---
@@ -176,7 +189,7 @@ def is_user_authorized(email):
     if email.lower() == "arunpeswani@gmail.com":
         return True
     try:
-        conn = get_db_connection()
+        conn = get_valid_db_connection()
         if not conn:
             return False
         cursor = conn.cursor()
@@ -194,7 +207,7 @@ if not is_user_authorized(user_email):
     
     existing_request = False
     try:
-        conn = get_db_connection()
+        conn = get_valid_db_connection()
         if conn:
             cursor = conn.cursor()
             cursor.execute("select id from access_requests where email = %s", (user_email.lower(),))
@@ -246,7 +259,7 @@ if not is_user_authorized(user_email):
             st.error("Name and Email ID cannot be empty.")
         else:
             try:
-                conn = get_db_connection()
+                conn = get_valid_db_connection()
                 if conn:
                     cursor = conn.cursor()
                     cursor.execute("""
@@ -1067,7 +1080,7 @@ elif app_mode == "🔐 Access Requests Management":
                     st.warning("No pending requests selected.")
                 else:
                     try:
-                        conn = get_db_connection()
+                        conn = get_valid_db_connection()
                         if conn:
                             cursor = conn.cursor()
                             if delete_selected:
@@ -1087,7 +1100,6 @@ elif app_mode == "🔐 Access Requests Management":
                                 conn.close()
                                 st.success(f"Successfully approved {len(target_requests)} user(s)!")
                             
-                            # Immediately clear cache to pull fresh DB updates
                             get_cached_requests_and_users.clear()
                             time.sleep(1.5)
                             st.rerun()
@@ -1139,7 +1151,7 @@ elif app_mode == "🔐 Access Requests Management":
                     st.warning("No valid users selected for unregistering.")
                 else:
                     try:
-                        conn = get_db_connection()
+                        conn = get_valid_db_connection()
                         if conn:
                             cursor = conn.cursor()
                             for email, name, req_ts in users_to_unregister:
@@ -1153,7 +1165,6 @@ elif app_mode == "🔐 Access Requests Management":
                             cursor.close()
                             conn.close()
                             
-                            # Immediately clear cache to pull fresh DB updates
                             get_cached_requests_and_users.clear()
                             st.success(f"Successfully unregistered {len(users_to_unregister)} user(s) and moved them back to Pending Requests!")
                             time.sleep(1.5)
