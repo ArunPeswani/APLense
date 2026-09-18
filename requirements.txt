@@ -16,3 +16,4 @@ supabase
 streamlit>=1.42.0
 Authlib>=1.3.2
 google-generativeai
+psycopg2-binary>=2.9.9
