@@ -248,7 +248,7 @@ if not user_authorized:
 header_col1, header_col2 = st.columns([0.6, 0.4])
 
 with header_col1:
-    st.title("📑 APLens - Plagiarism Checker")
+    st.title("📑 APLens Suite")
 
 with header_col2:
     avatar_col, menu_col = st.columns([0.3, 0.7])
