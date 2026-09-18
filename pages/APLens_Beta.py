@@ -17,6 +17,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 import difflib
 import google.generativeai as genai
 
+# --- HIDE/BLOCK PAGE FOR NON-ADMIN USERS ---
+user_is_logged_in = getattr(st.user, "is_logged_in", False)
+user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
+
+if not user_is_logged_in or user_email.lower() != "arunpeswani@gmail.com":
+    st.error("Access Denied. This page is restricted to the administrator.")
+    st.stop()
+
 # OCR, Image Processing & HEIF Support Imports
 from PIL import Image, ImageEnhance
 from pdf2image import convert_from_bytes
