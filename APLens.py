@@ -1,6 +1,9 @@
 import io
 import os
 import zipfile
+import datetime
+import sqlite3
+import time
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -21,6 +24,37 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher Suite", page_icon="📑", layout="centered")
 
+# --- LOCAL SQLITE DATABASE INITIALIZATION FOR ACCESS CONTROL ---
+DB_FILE = "aplens_audit.db"
+
+def init_local_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        create table if not exists authorized_users (
+            email text primary key,
+            name text,
+            requested_at text,
+            approved_at text
+        )
+    """)
+    cursor.execute("""
+        create table if not exists access_requests (
+            id integer primary key autoincrement,
+            name text,
+            email text unique,
+            remarks text,
+            timestamp text
+        )
+    """)
+    # Ensure super-admin arunpeswani@gmail.com is always authorized
+    cursor.execute("insert or ignore into authorized_users (email, name, requested_at, approved_at) values (?, ?, ?, ?)", 
+                   ("arunpeswani@gmail.com", "Arun Peswani", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+
+init_local_db()
+
 # --- COMPACT SIDEBAR CSS & CUSTOM BADGES ---
 st.markdown("""
     <style>
@@ -34,22 +68,181 @@ st.markdown("""
             border-radius: 8px;
             text-align: center;
         }
+        /* Official Google Sign-In Button Styling */
+        .google-login-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            background-color: #ffffff;
+            color: #3c4043 !important;
+            border: 1px solid #dadce0;
+            border-radius: 24px;
+            font-family: 'Roboto', sans-serif;
+            font-weight: 500;
+            font-size: 14px;
+            padding: 8px 22px;
+            text-decoration: none !important;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: background-color 0.2s, box-shadow 0.2s, border-color 0.2s;
+        }
+        .google-login-btn:hover {
+            background-color: #f8f9fa;
+            border-color: #dadce0;
+            box-shadow: 0 1px 3px rgba(60,64,67,0.2);
+            color: #202124 !important;
+        }
+        .google-login-btn svg {
+            width: 18px;
+            height: 18px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
 # --- SESSION STATE INITIALIZATION ---
 if "reset_count" not in st.session_state:
     st.session_state.reset_count = 0
+if "edit_email_toggled" not in st.session_state:
+    st.session_state.edit_email_toggled = False
 
 rc = st.session_state.reset_count
+
+# --- SAFE USER DATA EXTRACTION ---
+user_is_logged_in = getattr(st.user, "is_logged_in", False)
+user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
+user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
+user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", None)) if user_is_logged_in else ""
+
+if not user_avatar:
+    user_avatar = "https://www.w3schools.com/howto/img_avatar.png"
+
+if "action" in st.query_params and st.query_params["action"] == "login":
+    st.login("google")
+
+# ==========================================
+# GATED LOGIN CHECK & AUTHORIZATION GATE
+# ==========================================
+if not user_is_logged_in:
+    st.title("📑 APLens - Plagiarism & Matcher Suite")
+    st.markdown("---")
+    st.info("🔒 **Authentication Required:** Please sign in with your approved Google account to access APLens.")
+    
+    col_login1, col_login2 = st.columns([1, 1])
+    with col_login1:
+        st.markdown("""
+            <div style="padding-top: 15px;">
+                <a href="?action=login" target="_self" class="google-login-btn">
+                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.7 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                        <path fill="#4285F4" id="path4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.46-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48 z"/>
+                    </svg>
+                    Sign in with Google
+                </a>
+            </div>
+        """, unsafe_allow_html=True)
+    st.stop()
+
+def is_user_authorized(email):
+    if email.lower() == "arunpeswani@gmail.com":
+        return True
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("select email from authorized_users where email = ?", (email.lower(),))
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row)
+    except Exception:
+        return False
+
+if not is_user_authorized(user_email):
+    st.title("📑 APLens - Access Approval Required")
+    st.markdown("---")
+    
+    existing_request = False
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("select id from access_requests where email = ?", (user_email.lower(),))
+        existing_request = bool(cursor.fetchone())
+        conn.close()
+    except Exception:
+        pass
+
+    if existing_request:
+        st.warning(f"⏳ **Request Pending:** Your access request for **{user_email}** has already been submitted and is awaiting review by the administrator.")
+        if st.button("Sign Out / Switch Account", type="primary", key=f"unauth_signout_{rc}"):
+            st.logout()
+        st.stop()
+
+    st.info(f"👋 Hello **{user_name}** (`{user_email}`). Your account is not currently authorized to access APLens. Please submit an approval request below.")
+
+    with st.form(key=f"access_request_form_{rc}"):
+        req_name = st.text_input("Full Name", value=user_name)
+        
+        col_email_lbl, col_email_btn = st.columns([0.9, 0.1])
+        with col_email_lbl:
+            st.markdown("**Email ID**")
+        with col_email_btn:
+            if st.form_submit_button("✏️", help="Click to unlock and edit email address"):
+                st.session_state.edit_email_toggled = not st.session_state.get("edit_email_toggled", False)
+        
+        is_editable = st.session_state.get("edit_email_toggled", False)
+        if is_editable:
+            req_email = st.text_input("Edit Email ID", value=user_email, key=f"editable_email_input_{rc}")
+            st.caption("✏️ Email field is unlocked for editing.")
+        else:
+            req_email = st.text_input("Email ID (Locked)", value=user_email, disabled=True, key=f"locked_email_input_{rc}")
+            st.caption("🔒 Email ID is fetched from your Google login. Click the pencil icon above to edit.")
+
+        req_remarks = st.text_area("Remarks / Reason for Access", placeholder="e.g., Grader for Computer Science department batches...")
+        
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            submit_request = st.form_submit_button("Submit Request", type="primary", use_container_width=True)
+        with col_f2:
+            cancel_request = st.form_submit_button("Cancel & Sign Out", type="secondary", use_container_width=True)
+
+    if cancel_request:
+        st.logout()
+
+    if submit_request:
+        if not req_name.strip() or not req_email.strip():
+            st.error("Name and Email ID cannot be empty.")
+        else:
+            try:
+                conn = sqlite3.connect(DB_FILE)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    insert into access_requests (name, email, remarks, timestamp)
+                    values (?, ?, ?, ?)
+                """, (req_name.strip(), req_email.strip().lower(), req_remarks.strip(), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                conn.commit()
+                conn.close()
+                st.success("✅ Access request submitted successfully! The administrator has been notified.")
+                time.sleep(2)
+                st.rerun()
+            except Exception as ex:
+                st.error("An access request for this email has already been submitted.")
+
+    st.stop()
 
 # ==========================================
 # SIDEBAR SETUP (Strict Sequence with Separators)
 # ==========================================
 
+nav_options = ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"]
+
+# Add Access Management tab exclusively for admin arunpeswani@gmail.com
+is_admin = user_email.lower() == "arunpeswani@gmail.com"
+if is_admin:
+    nav_options.insert(3, "🔐 Access Requests Management")
+
 app_mode = st.sidebar.radio(
     "Navigation", 
-    ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"], 
+    nav_options, 
     key=f"nav_mode_{rc}"
 )
 
@@ -776,6 +969,168 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
 
     if not file1 or not file2:
         st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
+
+# ==========================================
+# MODE 3: ACCESS REQUESTS MANAGEMENT (ADMIN ONLY)
+# ==========================================
+elif is_admin and app_mode == "🔐 Access Requests Management":
+    st.header("🔐 Access Requests Management")
+    st.write("Review, approve, or manage user access requests and registered users for APLens.")
+
+    tab_pending, tab_registered = st.tabs(["⏳ Pending Requests", "👥 Registered Users"])
+
+    with tab_pending:
+        col_h_btn1, _ = st.columns([0.25, 0.75])
+        with col_h_btn1:
+            if st.button("🔄 Refresh Requests", type="secondary", use_container_width=True, key=f"refresh_reqs_{rc}"):
+                st.rerun()
+
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            df_requests = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
+            conn.close()
+        except Exception:
+            df_requests = pd.DataFrame()
+
+        if df_requests.empty:
+            st.info("✅ No pending access requests at this time.")
+        else:
+            st.write(f"Found **{len(df_requests)} pending request(s)**.")
+
+            editor_rows = []
+            for idx, row in df_requests.iterrows():
+                editor_rows.append({
+                    "Select": False,
+                    "id": row["id"],
+                    "Name": row["name"],
+                    "Email ID": row["email"],
+                    "Remarks": row["remarks"],
+                    "Timestamp": row["timestamp"]
+                })
+            df_editor_input = pd.DataFrame(editor_rows)
+
+            edited_pending_df = st.data_editor(
+                df_editor_input,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn("Select", default=False),
+                    "id": None,
+                },
+                disabled=["Name", "Email ID", "Remarks", "Timestamp"],
+                hide_index=True,
+                use_container_width=True,
+                key=f"pending_editor_{rc}"
+            )
+
+            col_act1, col_act2, col_act3, _ = st.columns([1, 1, 1, 1])
+            with col_act1:
+                approve_selected = st.button("Approve Selected", type="primary", use_container_width=True, key=f"approve_sel_{rc}")
+            with col_act2:
+                approve_all = st.button("Approve All", type="secondary", use_container_width=True, key=f"approve_all_{rc}")
+            with col_act3:
+                delete_selected = st.button("Delete Selected", type="secondary", use_container_width=True, key=f"delete_sel_{rc}")
+
+            if approve_selected or approve_all or delete_selected:
+                target_requests = []
+                for idx, row in edited_pending_df.iterrows():
+                    if approve_all or row["Select"]:
+                        target_requests.append((row["Email ID"], row["Name"], row["Timestamp"], row["id"]))
+
+                if not target_requests:
+                    st.warning("No pending requests selected.")
+                else:
+                    try:
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        if delete_selected:
+                            for email, name, req_ts, req_id in target_requests:
+                                cursor.execute("delete from access_requests where id = ?", (req_id,))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"Successfully deleted {len(target_requests)} pending request(s)!")
+                        else:
+                            for email, name, req_ts, req_id in target_requests:
+                                cursor.execute("insert or replace into authorized_users (email, name, requested_at, approved_at) values (?, ?, ?, ?)", 
+                                               (email.lower(), name, req_ts, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                                cursor.execute("delete from access_requests where id = ?", (req_id,))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"Successfully approved {len(target_requests)} user(s)!")
+                        
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"Error processing requests: {ex}")
+
+    with tab_registered:
+        st.subheader("👥 Approved & Registered Users")
+        
+        col_reg_btn1, _ = st.columns([0.25, 0.75])
+        with col_reg_btn1:
+            if st.button("🔄 Refresh Registered Users", type="secondary", use_container_width=True, key=f"refresh_regs_{rc}"):
+                st.rerun()
+
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            df_registered = pd.read_sql_query("select email, name, requested_at, approved_at from authorized_users order by approved_at desc", conn)
+            conn.close()
+        except Exception:
+            df_registered = pd.DataFrame()
+
+        if df_registered.empty:
+            st.info("No registered users found.")
+        else:
+            st.write(f"Found **{len(df_registered)} registered user(s)**.")
+
+            reg_editor_rows = []
+            for idx, row in df_registered.iterrows():
+                is_admin_user = row["email"].lower() == "arunpeswani@gmail.com"
+                reg_editor_rows.append({
+                    "Select": False,
+                    "Name": row["name"] or "N/A",
+                    "Email ID": row["email"],
+                    "Request Timestamp": row["requested_at"] or "N/A",
+                    "Approval Timestamp": row["approved_at"] or "N/A"
+                })
+            df_reg_input = pd.DataFrame(reg_editor_rows)
+
+            edited_reg_df = st.data_editor(
+                df_reg_input,
+                column_config={
+                    "Select": st.column_config.CheckboxColumn("Select", default=False),
+                },
+                disabled=["Name", "Email ID", "Request Timestamp", "Approval Timestamp"],
+                hide_index=True,
+                use_container_width=True,
+                key=f"registered_editor_{rc}"
+            )
+
+            col_unreg1, _ = st.columns([1, 2])
+            with col_unreg1:
+                unregister_selected = st.button("Unregister Selected Users", type="primary", use_container_width=True, key=f"unreg_sel_{rc}")
+
+            if unregister_selected:
+                users_to_unregister = []
+                for idx, row in edited_reg_df.iterrows():
+                    if row["Email ID"].lower() == "arunpeswani@gmail.com":
+                        continue
+                    if row["Select"]:
+                        users_to_unregister.append((row["Email ID"], row["Name"], row["Request Timestamp"]))
+
+                if not users_to_unregister:
+                    st.warning("No valid users selected for unregistering.")
+                else:
+                    try:
+                        conn = sqlite3.connect(DB_FILE)
+                        cursor = conn.cursor()
+                        for email, name, req_ts in users_to_unregister:
+                            cursor.execute("delete from authorized_users where email = ?", (email.lower(),))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Successfully unregistered {len(users_to_unregister)} user(s)!")
+                        time.sleep(1.5)
+                        st.rerun()
+                    except Exception as ex:
+                        st.error(f"Error unregistering users: {ex}")
 
 elif app_mode == "💡 User Guide & Help":
     st.header("💡 User Guide & Help Center")
