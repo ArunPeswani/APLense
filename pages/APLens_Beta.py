@@ -34,7 +34,8 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens Beta - Plagiarism & AI Grader Suite", page_icon="🧪", layout="centered")
 
-# --- NEON POSTGRESQL CONNECTION HELPER & TABLE INITIALIZATION ---
+# --- OPTIMIZED CACHED NEON CONNECTION POOLING ---
+@st.cache_resource
 def get_db_connection():
     try:
         db_url = st.secrets["DATABASE_URL"]
@@ -132,6 +133,10 @@ def init_neon_db():
             timestamp text
         )
     """)
+    # Add indexes for lightning-fast lookups under high concurrency
+    cursor.execute("create index if not exists idx_beta_auth_email on authorized_users (email);")
+    cursor.execute("create index if not exists idx_beta_req_email on access_requests (email);")
+
     cursor.execute("insert into authorized_users (email, name, requested_at, approved_at) values (%s, %s, %s, %s) on conflict (email) do nothing", 
                    ("arunpeswani@gmail.com", "Arun Peswani", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
@@ -139,6 +144,23 @@ def init_neon_db():
     conn.close()
 
 init_neon_db()
+
+# --- CACHED DATA FETCHER FOR LIGHTNING-FAST ADMIN LISTS ---
+@st.cache_data(ttl=30)
+def get_cached_requests_and_users():
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return pd.DataFrame(), pd.DataFrame()
+        df_reqs = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
+        df_regs = pd.read_sql_query("select email, name, requested_at, approved_at from authorized_users order by approved_at desc", conn)
+        conn.close()
+        return df_reqs, df_regs
+    except Exception:
+        return pd.DataFrame(), pd.DataFrame()
+
+# Preload cache immediately on startup so admin pages open instantly
+get_cached_requests_and_users()
 
 st.markdown("""
     <style>
@@ -317,6 +339,7 @@ if not is_user_authorized(user_email):
                     conn.commit()
                     cursor.close()
                     conn.close()
+                get_cached_requests_and_users.clear()
                 st.success("✅ Access request submitted successfully! The administrator has been notified.")
                 time.sleep(2)
                 st.rerun()
@@ -1332,23 +1355,15 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
     st.header("🔐 Access Requests Management")
     st.write("Review, approve, or manage user access requests and registered users for APLens Beta.")
 
+    df_requests, df_registered = get_cached_requests_and_users()
     tab_pending, tab_registered = st.tabs(["⏳ Pending Requests", "👥 Registered Users"])
 
     with tab_pending:
         col_h_btn1, col_h_btn2 = st.columns([0.25, 0.75])
         with col_h_btn1:
             if st.button("🔄 Refresh Requests", type="secondary", use_container_width=True, key=f"refresh_reqs_{rc}"):
+                get_cached_requests_and_users.clear()
                 st.rerun()
-
-        try:
-            conn = get_db_connection()
-            if conn:
-                df_requests = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
-                conn.close()
-            else:
-                df_requests = pd.DataFrame()
-        except Exception:
-            df_requests = pd.DataFrame()
 
         if df_requests.empty:
             st.info("✅ No pending access requests at this time.")
@@ -1427,6 +1442,8 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                                 conn.close()
                                 st.success(f"Successfully approved {len(target_requests)} user(s)!")
                             
+                            # Immediately clear cache to pull fresh DB updates
+                            get_cached_requests_and_users.clear()
                             time.sleep(1.5)
                             st.rerun()
                     except Exception as ex:
@@ -1438,17 +1455,8 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
         col_reg_btn1, _ = st.columns([0.25, 0.75])
         with col_reg_btn1:
             if st.button("🔄 Refresh Registered Users", type="secondary", use_container_width=True, key=f"refresh_regs_{rc}"):
+                get_cached_requests_and_users.clear()
                 st.rerun()
-
-        try:
-            conn = get_db_connection()
-            if conn:
-                df_registered = pd.read_sql_query("select email, name, requested_at, approved_at from authorized_users order by approved_at desc", conn)
-                conn.close()
-            else:
-                df_registered = pd.DataFrame()
-        except Exception:
-            df_registered = pd.DataFrame()
 
         if df_registered.empty:
             st.info("No registered users found.")
@@ -1518,6 +1526,9 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                             conn.commit()
                             cursor.close()
                             conn.close()
+                            
+                            # Immediately clear cache to pull fresh DB updates
+                            get_cached_requests_and_users.clear()
                             st.success(f"Successfully unregistered {len(users_to_unregister)} user(s) and moved them back to Pending Requests!")
                             time.sleep(1.5)
                             st.rerun()
