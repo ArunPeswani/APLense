@@ -1578,9 +1578,9 @@ elif app_mode == "💡 User Guide & Help":
         "To use the AI Grader, you will need a personal API key from Google AI Studio. Follow these simple steps to generate yours:\n\n"
         "1. Open your web browser and go to **[Google AI Studio](https://aistudio.google.com/)**.\n"
         "2. Sign in using your Google account.\n"
-        "3. In the left-hand sidebar or top navigation bar, click on **'Get API key'**.\n"
-        "4. Click on **'Create API key in new project'** (or select an existing Google Cloud project if prompted).\n"
-        "5. Copy your newly generated API key.\n"
+        "3. In the left-hand sidebar or top navigation bar, click on **'Dashboard'**.\n"
+        "4. In the left-hand sidebar, click on **'API keys'**.\n"
+        "5. A default key is auto-generated on the righ side in API Keys table. Copy your API key.\n"
         "6. Return to APLens Beta, paste your key into the sidebar input field under **'🔑 AI Grader API Key (BYOK)'**, and it will be securely saved to your account for future sessions!"
     )
 
