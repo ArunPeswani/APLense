@@ -123,6 +123,16 @@ def init_local_db():
 
 init_local_db()
 
+# --- GATED LOGIN CHECK & AUTHORIZATION GATE ---
+user_is_logged_in = getattr(st.user, "is_logged_in", False)
+user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
+
+if not user_is_logged_in or not is_user_authorized(user_email):
+    st.title("🧪 APLens Beta - Access Restricted")
+    st.markdown("---")
+    st.info("🔒 **Authentication Required:** Please sign in with an authorized Google account to view this page.")
+    st.stop()
+
 st.markdown("""
     <style>
         [data-testid="stSidebar"] div.stVerticalBlock > div {
