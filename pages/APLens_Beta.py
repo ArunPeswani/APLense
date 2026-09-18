@@ -171,6 +171,8 @@ if "saved_reports" not in st.session_state:
     st.session_state.saved_reports = []
 if "edit_email_toggled" not in st.session_state:
     st.session_state.edit_email_toggled = False
+if "pending_master_select" not in st.session_state:
+    st.session_state.pending_master_select = False
 if "reg_master_select" not in st.session_state:
     st.session_state.reg_master_select = False
 
@@ -1252,7 +1254,7 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
     tab_pending, tab_registered = st.tabs(["⏳ Pending Requests", "👥 Registered Users"])
 
     with tab_pending:
-        col_h_btn1, _ = st.columns([0.25, 0.75])
+        col_h_btn1, col_h_btn2 = st.columns([0.25, 0.75])
         with col_h_btn1:
             if st.button("🔄 Refresh Requests", type="secondary", use_container_width=True, key=f"refresh_reqs_{rc}"):
                 st.rerun()
@@ -1376,7 +1378,6 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
             reg_editor_rows = []
             for idx, row in df_registered.iterrows():
                 is_admin_user = row["email"].lower() == "arunpeswani@gmail.com"
-                # Admin user cannot be selected
                 sel_val = False if is_admin_user else st.session_state.get("reg_master_select", False)
                 reg_editor_rows.append({
                     "Select": sel_val,
@@ -1572,14 +1573,25 @@ elif app_mode == "💡 User Guide & Help":
         "* **Exemplary Badge Allocation:** Specify the top percentage of students to receive Exemplary Badges based on rubric performance."
     )
 
-    st.subheader("3. Cumulative Late Submissions, 60-Day Retention & Purge")
+    st.subheader("3. How to Get Your Free Google AI Studio API Key (BYOK)")
+    st.write(
+        "To use the AI Grader, you will need a personal API key from Google AI Studio. Follow these simple steps to generate yours:\n\n"
+        "1. Open your web browser and go to **[Google AI Studio](https://aistudio.google.com/)**.\n"
+        "2. Sign in using your Google account.\n"
+        "3. In the left-hand sidebar or top navigation bar, click on **'Get API key'**.\n"
+        "4. Click on **'Create API key in new project'** (or select an existing Google Cloud project if prompted).\n"
+        "5. Copy your newly generated API key.\n"
+        "6. Return to APLens Beta, paste your key into the sidebar input field under **'🔑 AI Grader API Key (BYOK)'**, and it will be securely saved to your account for future sessions!"
+    )
+
+    st.subheader("4. Cumulative Late Submissions, 60-Day Retention & Purge")
     st.write(
         "* **Conditional Cumulative Trigger:** Cumulative checking and AI grading history **only** load/save if **both** LMS Number and Assignment Name are provided.\n"
         "* **Default 60-Day Retention:** Reports automatically schedule deletion after 60 days (customizable via the sidebar dropdown).\n"
         "* **Manual Purge:** Use the Course Data Purge tool in the Report History dashboard to instantly delete records for a specific LMS number and assignment."
     )
 
-    st.subheader("4. Support & Contact")
+    st.subheader("5. Support & Contact")
     st.write(
         "For assistance, please contact **Arun Peswani**."
     )
