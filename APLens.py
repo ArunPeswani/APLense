@@ -24,18 +24,6 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher Suite", page_icon="📑", layout="centered")
 
-# --- HIDE SIDEBAR IF NOT LOGGED IN ---
-user_is_logged_in = getattr(st.user, "is_logged_in", False)
-
-if not user_is_logged_in:
-    st.markdown("""
-        <style>
-            [data-testid="stSidebar"] {
-                display: none;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-
 # --- LOCAL SQLITE DATABASE INITIALIZATION FOR ACCESS CONTROL ---
 DB_FILE = "aplens_audit.db"
 
@@ -59,7 +47,6 @@ def init_local_db():
             timestamp text
         )
     """)
-    # Ensure super-admin arunpeswani@gmail.com is always authorized
     cursor.execute("insert or ignore into authorized_users (email, name, requested_at, approved_at) values (?, ?, ?, ?)", 
                    ("arunpeswani@gmail.com", "Arun Peswani", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
@@ -131,6 +118,33 @@ if not user_avatar:
 if "action" in st.query_params and st.query_params["action"] == "login":
     st.login("google")
 
+def is_user_authorized(email):
+    if not email:
+        return False
+    if email.lower() == "arunpeswani@gmail.com":
+        return True
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("select email from authorized_users where email = ?", (email.lower(),))
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row)
+    except Exception:
+        return False
+
+# --- HIDE SIDEBAR IF UNATHENTICATED OR PENDING APPROVAL ---
+user_authorized = is_user_authorized(user_email)
+
+if not user_is_logged_in or not user_authorized:
+    st.markdown("""
+        <style>
+            [data-testid="stSidebar"] {
+                display: none;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
 # ==========================================
 # GATED LOGIN CHECK & AUTHORIZATION GATE
 # ==========================================
@@ -156,20 +170,7 @@ if not user_is_logged_in:
         """, unsafe_allow_html=True)
     st.stop()
 
-def is_user_authorized(email):
-    if email.lower() == "arunpeswani@gmail.com":
-        return True
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("select email from authorized_users where email = ?", (email.lower(),))
-        row = cursor.fetchone()
-        conn.close()
-        return bool(row)
-    except Exception:
-        return False
-
-if not is_user_authorized(user_email):
+if not user_authorized:
     st.title("📑 APLens - Access Approval Required")
     st.markdown("---")
     
@@ -247,7 +248,6 @@ if not is_user_authorized(user_email):
 
 nav_options = ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "💡 User Guide & Help"]
 
-# Add Access Management tab exclusively for admin arunpeswani@gmail.com
 is_admin = user_email.lower() == "arunpeswani@gmail.com"
 if is_admin:
     nav_options.insert(3, "🔐 Access Requests Management")
@@ -1121,24 +1121,24 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                 unregister_selected = st.button("Unregister Selected Users", type="primary", use_container_width=True, key=f"unreg_sel_{rc}")
 
             if unregister_selected:
-                users_to_unregister = []
+                emails_to_unregister = []
                 for idx, row in edited_reg_df.iterrows():
                     if row["Email ID"].lower() == "arunpeswani@gmail.com":
                         continue
                     if row["Select"]:
-                        users_to_unregister.append((row["Email ID"], row["Name"], row["Request Timestamp"]))
+                        emails_to_unregister.append(row["Email ID"])
 
-                if not users_to_unregister:
+                if not emails_to_unregister:
                     st.warning("No valid users selected for unregistering.")
                 else:
                     try:
                         conn = sqlite3.connect(DB_FILE)
                         cursor = conn.cursor()
-                        for email, name, req_ts in users_to_unregister:
+                        for email in emails_to_unregister:
                             cursor.execute("delete from authorized_users where email = ?", (email.lower(),))
                         conn.commit()
                         conn.close()
-                        st.success(f"Successfully unregistered {len(users_to_unregister)} user(s)!")
+                        st.success(f"Successfully unregistered {len(emails_to_unregister)} user(s)!")
                         time.sleep(1.5)
                         st.rerun()
                     except Exception as ex:
