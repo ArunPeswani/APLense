@@ -171,6 +171,8 @@ if "saved_reports" not in st.session_state:
     st.session_state.saved_reports = []
 if "edit_email_toggled" not in st.session_state:
     st.session_state.edit_email_toggled = False
+if "edit_api_key_toggled" not in st.session_state:
+    st.session_state.edit_api_key_toggled = False
 if "pending_master_select" not in st.session_state:
     st.session_state.pending_master_select = False
 if "reg_master_select" not in st.session_state:
@@ -359,10 +361,36 @@ app_mode = st.sidebar.radio("Navigation", nav_options, key=f"nav_mode_{rc}")
 st.sidebar.markdown("---")
 st.sidebar.subheader("🔑 AI Grader API Key (BYOK)")
 stored_key = get_user_api_key(user_email)
-user_gemini_key = st.sidebar.text_input("Google AI Studio API Key", value=stored_key, type="default", autocomplete="off", key=f"user_gemini_key_{rc}", help="Enter your free Google AI Studio key once. It is securely saved for your account.")
-if user_gemini_key != stored_key:
-    save_user_api_key(user_email, user_gemini_key.strip())
-    st.sidebar.success("API key saved securely!")
+
+# --- SECURE LOCKED/MASKED API KEY VIEW WITH EDIT TOGGLE ---
+if stored_key and not st.session_state.get("edit_api_key_toggled", False):
+    st.sidebar.text_input("Google AI Studio API Key", value="•" * 24, type="default", disabled=True, key=f"masked_api_key_{rc}")
+    
+    col_k_lbl, col_k_btn = st.sidebar.columns([0.7, 0.3])
+    with col_k_lbl:
+        st.sidebar.success("🔒 API key saved securely!")
+    with col_k_btn:
+        if st.sidebar.button("✏️ Edit", key=f"unlock_api_btn_{rc}", help="Click to unlock and change your API key"):
+            st.session_state.edit_api_key_toggled = True
+            st.rerun()
+            
+    user_gemini_key = stored_key
+else:
+    user_gemini_key = st.sidebar.text_input(
+        "Google AI Studio API Key", 
+        value=stored_key if st.session_state.get("edit_api_key_toggled", False) else "", 
+        type="password", 
+        autocomplete="off", 
+        key=f"user_gemini_key_{rc}", 
+        help="Paste your free Google AI Studio key and press enter."
+    )
+    
+    if user_gemini_key != stored_key and user_gemini_key.strip():
+        save_user_api_key(user_email, user_gemini_key.strip())
+        st.session_state.edit_api_key_toggled = False
+        st.sidebar.success("API key saved securely!")
+        time.sleep(1)
+        st.rerun()
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Analysis Settings")
@@ -396,7 +424,7 @@ reference_file = st.sidebar.file_uploader(
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Reset Everything", type="secondary", key=f"reset_all_btn_{rc}"):
     st.session_state.reset_count_beta += 1
-    keys_to_clear = [k for k in list(st.session_state.keys()) if k not in ["reset_count_beta", "saved_reports", "edit_email_toggled"]]
+    keys_to_clear = [k for k in list(st.session_state.keys()) if k not in ["reset_count_beta", "saved_reports", "edit_email_toggled", "edit_api_key_toggled"]]
     for key in keys_to_clear:
         del st.session_state[key]
     st.rerun()
@@ -484,7 +512,7 @@ if app_mode == "Plagiarism Checker":
     with col_lms1:
         lms_number_input = st.text_input("🏫 LMS Number", placeholder="e.g., 48921", key=f"lms_num_{rc}")
     with col_lms2:
-        assignment_name_input = st.text_input("📝 Assignment Name", placeholder="e.g., Assignment A", key=f"assign_name_{rc}")
+        assignment_name_input = st.text_input("📝 Assignment Name", placeholder="e.g., Assignment A", key=f"ai_assign_{rc}")
 
     lms_val = lms_number_input.strip()
     assign_val = assignment_name_input.strip()
@@ -1580,7 +1608,7 @@ elif app_mode == "💡 User Guide & Help":
         "2. Sign in using your Google account.\n"
         "3. In the left-hand sidebar or top navigation bar, click on **'Dashboard'**.\n"
         "4. In the left-hand sidebar, click on **'API keys'**.\n"
-        "5. A default key is auto-generated on the righ side in API Keys table. Copy your API key.\n"
+        "5. A default key is auto-generated on the right side in the API Keys table. Copy your API key.\n"
         "6. Return to APLens Beta, paste your key into the sidebar input field under **'🔑 AI Grader API Key (BYOK)'**, and it will be securely saved to your account for future sessions!"
     )
 
