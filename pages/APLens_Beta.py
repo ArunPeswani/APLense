@@ -2,7 +2,6 @@ import io
 import os
 import zipfile
 import datetime
-import sqlite3
 import json
 import time
 import streamlit as st
@@ -16,6 +15,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 import difflib
 import google.generativeai as genai
+import psycopg2
 
 # --- HIDE/BLOCK PAGE FOR NON-ADMIN USERS ---
 user_is_logged_in = getattr(st.user, "is_logged_in", False)
@@ -34,15 +34,23 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens Beta - Plagiarism & AI Grader Suite", page_icon="🧪", layout="centered")
 
-# --- LOCAL SQLITE DATABASE INITIALIZATION ---
-DB_FILE = "aplens_audit.db"
+# --- NEON POSTGRESQL CONNECTION HELPER & TABLE INITIALIZATION ---
+def get_db_connection():
+    try:
+        db_url = st.secrets["DATABASE_URL"]
+        return psycopg2.connect(db_url)
+    except Exception as e:
+        st.error(f"Database connection error: {e}")
+        return None
 
-def init_local_db():
-    conn = sqlite3.connect(DB_FILE)
+def init_neon_db():
+    conn = get_db_connection()
+    if not conn:
+        return
     cursor = conn.cursor()
     cursor.execute("""
         create table if not exists beta_user_activity (
-            id integer primary key autoincrement,
+            id serial primary key,
             user_email text,
             user_name text,
             timestamp text,
@@ -59,7 +67,7 @@ def init_local_db():
     """)
     cursor.execute("""
         create table if not exists beta_deep_dive_activity (
-            id integer primary key autoincrement,
+            id serial primary key,
             user_email text,
             user_name text,
             timestamp text,
@@ -71,7 +79,7 @@ def init_local_db():
     """)
     cursor.execute("""
         create table if not exists course_document_vault (
-            id integer primary key autoincrement,
+            id serial primary key,
             lms_number text,
             assignment_name text,
             filename text,
@@ -81,7 +89,7 @@ def init_local_db():
     """)
     cursor.execute("""
         create table if not exists course_metadata (
-            id integer primary key autoincrement,
+            id serial primary key,
             lms_number text,
             assignment_name text,
             reference_text text,
@@ -97,7 +105,7 @@ def init_local_db():
     """)
     cursor.execute("""
         create table if not exists ai_grades_vault (
-            id integer primary key autoincrement,
+            id serial primary key,
             lms_number text,
             assignment_name text,
             student_name text,
@@ -117,19 +125,20 @@ def init_local_db():
     """)
     cursor.execute("""
         create table if not exists access_requests (
-            id integer primary key autoincrement,
+            id serial primary key,
             name text,
             email text unique,
             remarks text,
             timestamp text
         )
     """)
-    cursor.execute("insert or ignore into authorized_users (email, name, requested_at, approved_at) values (?, ?, ?, ?)", 
+    cursor.execute("insert into authorized_users (email, name, requested_at, approved_at) values (%s, %s, %s, %s) on conflict (email) do nothing", 
                    ("arunpeswani@gmail.com", "Arun Peswani", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
     conn.commit()
+    cursor.close()
     conn.close()
 
-init_local_db()
+init_neon_db()
 
 st.markdown("""
     <style>
@@ -228,10 +237,13 @@ def is_user_authorized(email):
     if email.lower() == "arunpeswani@gmail.com":
         return True
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
+        if not conn:
+            return False
         cursor = conn.cursor()
-        cursor.execute("select email from authorized_users where email = ?", (email.lower(),))
+        cursor.execute("select email from authorized_users where email = %s", (email.lower(),))
         row = cursor.fetchone()
+        cursor.close()
         conn.close()
         return bool(row)
     except Exception:
@@ -243,11 +255,13 @@ if not is_user_authorized(user_email):
     
     existing_request = False
     try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("select id from access_requests where email = ?", (user_email.lower(),))
-        existing_request = bool(cursor.fetchone())
-        conn.close()
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("select id from access_requests where email = %s", (user_email.lower(),))
+            existing_request = bool(cursor.fetchone())
+            cursor.close()
+            conn.close()
     except Exception:
         pass
 
@@ -293,14 +307,16 @@ if not is_user_authorized(user_email):
             st.error("Name and Email ID cannot be empty.")
         else:
             try:
-                conn = sqlite3.connect(DB_FILE)
-                cursor = conn.cursor()
-                cursor.execute("""
-                    insert into access_requests (name, email, remarks, timestamp)
-                    values (?, ?, ?, ?)
-                """, (req_name.strip(), req_email.strip().lower(), req_remarks.strip(), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                conn.commit()
-                conn.close()
+                conn = get_db_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        insert into access_requests (name, email, remarks, timestamp)
+                        values (%s, %s, %s, %s)
+                    """, (req_name.strip(), req_email.strip().lower(), req_remarks.strip(), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
                 st.success("✅ Access request submitted successfully! The administrator has been notified.")
                 time.sleep(2)
                 st.rerun()
@@ -338,10 +354,13 @@ with header_col2:
 
 def get_user_api_key(email):
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
+        if not conn:
+            return ""
         cursor = conn.cursor()
-        cursor.execute("select api_key from grader_api_keys where email = ?", (email,))
+        cursor.execute("select api_key from grader_api_keys where email = %s", (email,))
         row = cursor.fetchone()
+        cursor.close()
         conn.close()
         return row[0] if row else ""
     except Exception:
@@ -349,11 +368,17 @@ def get_user_api_key(email):
 
 def save_user_api_key(email, key):
     try:
-        conn = sqlite3.connect(DB_FILE)
+        conn = get_db_connection()
+        if not conn:
+            return
         cursor = conn.cursor()
-        cursor.execute("insert or replace into grader_api_keys (email, api_key, updated_at) values (?, ?, ?)", 
-                       (email, key, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        cursor.execute("""
+            insert into grader_api_keys (email, api_key, updated_at) 
+            values (%s, %s, %s) 
+            on conflict (email) do update set api_key = EXCLUDED.api_key, updated_at = EXCLUDED.updated_at
+        """, (email, key, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         conn.commit()
+        cursor.close()
         conn.close()
     except Exception:
         pass
@@ -520,7 +545,7 @@ if app_mode == "Plagiarism Checker":
     with col_lms1:
         lms_number_input = st.text_input("🏫 LMS Number", placeholder="e.g., 48921", key=f"lms_num_{rc}")
     with col_lms2:
-        assignment_name_input = st.text_input("📝 Assignment Name", placeholder="e.g., Assignment A", key=f"ai_assign_{rc}")
+        assignment_name_input = st.text_input("📝 Assignment Name", placeholder="e.g., Assignment A", key=f"assign_name_{rc}")
 
     lms_val = lms_number_input.strip()
     assign_val = assignment_name_input.strip()
@@ -531,41 +556,47 @@ if app_mode == "Plagiarism Checker":
         global_reference_text, _ = extract_text_and_images_from_file(reference_file, reference_file.name.lower())
         if is_cumulative:
             try:
-                conn = sqlite3.connect(DB_FILE)
-                cursor = conn.cursor()
-                cursor.execute("delete from course_metadata where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
-                cursor.execute("""
-                    insert into course_metadata (lms_number, assignment_name, reference_text, timestamp)
-                    values (?, ?, ?, ?)
-                """, (lms_val, assign_val, global_reference_text, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                conn.commit()
-                conn.close()
-                st.success("📌 Instructions file uploaded and saved to vault for future runs under this LMS and Assignment!")
+                conn = get_db_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    cursor.execute("delete from course_metadata where lms_number = %s and assignment_name = %s", (lms_val, assign_val))
+                    cursor.execute("""
+                        insert into course_metadata (lms_number, assignment_name, reference_text, timestamp)
+                        values (%s, %s, %s, %s)
+                    """, (lms_val, assign_val, global_reference_text, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+                    st.success("📌 Instructions file uploaded and saved to vault for future runs under this LMS and Assignment!")
             except Exception:
                 pass
     elif is_cumulative:
         try:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("select reference_text from course_metadata where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
-            row = cursor.fetchone()
-            conn.close()
-            if row and row[0]:
-                global_reference_text = row[0]
-                st.info(f"💡 Automatically loaded saved assignment instructions/syllabus from vault for LMS: **{lms_val}** | Assignment: **{assign_val}**")
+            conn = get_db_connection()
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute("select reference_text from course_metadata where lms_number = %s and assignment_name = %s", (lms_val, assign_val))
+                row = cursor.fetchone()
+                cursor.close()
+                conn.close()
+                if row and row[0]:
+                    global_reference_text = row[0]
+                    st.info(f"💡 Automatically loaded saved assignment instructions/syllabus from vault for LMS: **{lms_val}** | Assignment: **{assign_val}**")
         except Exception:
             pass
 
     try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("select distinct lms_number, assignment_name from course_document_vault")
-        past_records = cursor.fetchall()
-        conn.close()
-        if past_records:
-            past_lms_list = sorted(list(set(r[0] for r in past_records if r[0])))
-            if past_lms_list:
-                st.caption(f"💡 Previously used LMS Numbers in Vault: {', '.join(past_lms_list)}")
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("select distinct lms_number, assignment_name from course_document_vault")
+            past_records = cursor.fetchall()
+            cursor.close()
+            conn.close()
+            if past_records:
+                past_lms_list = sorted(list(set(r[0] for r in past_records if r[0])))
+                if past_lms_list:
+                    st.caption(f"💡 Previously used LMS Numbers in Vault: {', '.join(past_lms_list)}")
     except Exception:
         pass
 
@@ -643,16 +674,18 @@ if app_mode == "Plagiarism Checker":
             if is_cumulative:
                 status_text.text("Retrieving historical submissions from document vault...")
                 try:
-                    conn = sqlite3.connect(DB_FILE)
-                    cursor = conn.cursor()
-                    cursor.execute("select filename, extracted_text from course_document_vault where lms_number = ? and assignment_name = ?", (lms_val, assign_val))
-                    vault_rows = cursor.fetchall()
-                    conn.close()
-                    for r in vault_rows:
-                        f_name, f_text = r[0], r[1]
-                        historical_filenames.append(f"📁 [Past] {f_name}")
-                        historical_texts.append(f_text)
-                        existing_filenames_set.add(f_name)
+                    conn = get_db_connection()
+                    if conn:
+                        cursor = conn.cursor()
+                        cursor.execute("select filename, extracted_text from course_document_vault where lms_number = %s and assignment_name = %s", (lms_val, assign_val))
+                        vault_rows = cursor.fetchall()
+                        cursor.close()
+                        conn.close()
+                        for r in vault_rows:
+                            f_name, f_text = r[0], r[1]
+                            historical_filenames.append(f"📁 [Past] {f_name}")
+                            historical_texts.append(f_text)
+                            existing_filenames_set.add(f_name)
                 except Exception:
                     pass
 
@@ -712,14 +745,16 @@ if app_mode == "Plagiarism Checker":
                 
                 if is_cumulative and new_files_to_vault:
                     try:
-                        conn = sqlite3.connect(DB_FILE)
-                        cursor = conn.cursor()
-                        cursor.executemany("""
-                            insert into course_document_vault (lms_number, assignment_name, filename, extracted_text, timestamp)
-                            values (?, ?, ?, ?, ?)
-                        """, new_files_to_vault)
-                        conn.commit()
-                        conn.close()
+                        conn = get_db_connection()
+                        if conn:
+                            cursor = conn.cursor()
+                            cursor.executemany("""
+                                insert into course_document_vault (lms_number, assignment_name, filename, extracted_text, timestamp)
+                                values (%s, %s, %s, %s, %s)
+                            """, new_files_to_vault)
+                            conn.commit()
+                            cursor.close()
+                            conn.close()
                     except Exception:
                         pass
 
@@ -743,21 +778,23 @@ if app_mode == "Plagiarism Checker":
                 current_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                 try:
-                    conn = sqlite3.connect(DB_FILE)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        insert into beta_user_activity (
-                            user_email, user_name, timestamp, course, analysis_type, 
-                            files_scanned, min_ngram_words, max_ngram_words, 
-                            flagging_threshold, max_similarity, avg_similarity, flagged_pairs_count
-                        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        user_email, user_name, current_timestamp, st.session_state.beta_course, analysis_mode_label,
-                        total_files, min_words, max_words, similarity_threshold,
-                        round(max_sim, 2), round(avg_sim, 2), flagged_pairs_count
-                    ))
-                    conn.commit()
-                    conn.close()
+                    conn = get_db_connection()
+                    if conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            insert into beta_user_activity (
+                                user_email, user_name, timestamp, course, analysis_type, 
+                                files_scanned, min_ngram_words, max_ngram_words, 
+                                flagging_threshold, max_similarity, avg_similarity, flagged_pairs_count
+                            ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            user_email, user_name, current_timestamp, st.session_state.beta_course, analysis_mode_label,
+                            total_files, min_words, max_words, similarity_threshold,
+                            round(max_sim, 2), round(avg_sim, 2), flagged_pairs_count
+                        ))
+                        conn.commit()
+                        cursor.close()
+                        conn.close()
                 except Exception:
                     pass
 
@@ -846,13 +883,15 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
     
     global_ref_deep = ""
     try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("select reference_text from course_metadata order by id desc limit 1")
-        row = cursor.fetchone()
-        conn.close()
-        if row and row[0]:
-            global_ref_deep = row[0]
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("select reference_text from course_metadata order by id desc limit 1")
+            row = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            if row and row[0]:
+                global_ref_deep = row[0]
     except Exception:
         pass
 
@@ -969,19 +1008,21 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
                 st.session_state.deep_analyzed = True
                 
                 try:
-                    conn = sqlite3.connect(DB_FILE)
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        insert into beta_deep_dive_activity (
-                            user_email, user_name, timestamp, doc_a_name, doc_b_name, 
-                            high_match_count_over_50pct, top_matches_summary
-                        ) values (?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        user_email, user_name, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        file1.name, file2.name, len(high_match_instances), str(high_match_instances[:5])
-                    ))
-                    conn.commit()
-                    conn.close()
+                    conn = get_db_connection()
+                    if conn:
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            insert into beta_deep_dive_activity (
+                                user_email, user_name, timestamp, doc_a_name, doc_b_name, 
+                                high_match_count_over_50pct, top_matches_summary
+                            ) values (%s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            user_email, user_name, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            file1.name, file2.name, len(high_match_instances), str(high_match_instances[:5])
+                        ))
+                        conn.commit()
+                        cursor.close()
+                        conn.close()
                 except Exception:
                     pass
                 
@@ -1128,18 +1169,20 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
                     historical_grades = []
                     if ai_is_cumulative:
                         try:
-                            conn = sqlite3.connect(DB_FILE)
-                            cursor = conn.cursor()
-                            cursor.execute("select student_name, grades_json, exemplary_badge from ai_grades_vault where lms_number = ? and assignment_name = ?", (ai_lms_val, ai_assign_val))
-                            vault_rows = cursor.fetchall()
-                            conn.close()
-                            for r in vault_rows:
-                                s_name, g_json, badge = r[0], r[1], r[2]
-                                try:
-                                    parsed_g = json.loads(g_json)
-                                except Exception:
-                                    parsed_g = {}
-                                historical_grades.append({"Student Name": f"📁 [Past] {s_name}", **parsed_g, "Max Peer Similarity (%)": "N/A (Vault)", "Exemplary Badge": badge})
+                            conn = get_db_connection()
+                            if conn:
+                                cursor = conn.cursor()
+                                cursor.execute("select student_name, grades_json, exemplary_badge from ai_grades_vault where lms_number = %s and assignment_name = %s", (ai_lms_val, ai_assign_val))
+                                vault_rows = cursor.fetchall()
+                                cursor.close()
+                                conn.close()
+                                for r in vault_rows:
+                                    s_name, g_json, badge = r[0], r[1], r[2]
+                                    try:
+                                        parsed_g = json.loads(g_json)
+                                    except Exception:
+                                        parsed_g = {}
+                                    historical_grades.append({"Student Name": f"📁 [Past] {s_name}", **parsed_g, "Max Peer Similarity (%)": "N/A (Vault)", "Exemplary Badge": badge})
                         except Exception:
                             pass
 
@@ -1227,15 +1270,17 @@ elif app_mode == "🤖 AI Grader & Rubric Evaluation":
 
                         if ai_is_cumulative:
                             try:
-                                conn = sqlite3.connect(DB_FILE)
-                                cursor = conn.cursor()
-                                cursor.execute("delete from ai_grades_vault where lms_number = ? and assignment_name = ? and student_name = ?", (ai_lms_val, ai_assign_val, student_name))
-                                cursor.execute("""
-                                    insert into ai_grades_vault (lms_number, assignment_name, student_name, grades_json, exemplary_badge, timestamp, expiry_date)
-                                    values (?, ?, ?, ?, ?, ?, ?)
-                                """, (ai_lms_val, ai_assign_val, student_name, json.dumps(parsed_json), "Pending", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), expiry_date))
-                                conn.commit()
-                                conn.close()
+                                conn = get_db_connection()
+                                if conn:
+                                    cursor = conn.cursor()
+                                    cursor.execute("delete from ai_grades_vault where lms_number = %s and assignment_name = %s and student_name = %s", (ai_lms_val, ai_assign_val, student_name))
+                                    cursor.execute("""
+                                        insert into ai_grades_vault (lms_number, assignment_name, student_name, grades_json, exemplary_badge, timestamp, expiry_date)
+                                        values (%s, %s, %s, %s, %s, %s, %s)
+                                    """, (ai_lms_val, ai_assign_val, student_name, json.dumps(parsed_json), "Pending", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), expiry_date))
+                                    conn.commit()
+                                    cursor.close()
+                                    conn.close()
                             except Exception:
                                 pass
 
@@ -1296,9 +1341,12 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                 st.rerun()
 
         try:
-            conn = sqlite3.connect(DB_FILE)
-            df_requests = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
-            conn.close()
+            conn = get_db_connection()
+            if conn:
+                df_requests = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
+                conn.close()
+            else:
+                df_requests = pd.DataFrame()
         except Exception:
             df_requests = pd.DataFrame()
 
@@ -1359,25 +1407,28 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                     st.warning("No pending requests selected.")
                 else:
                     try:
-                        conn = sqlite3.connect(DB_FILE)
-                        cursor = conn.cursor()
-                        if delete_selected:
-                            for email, name, req_ts, req_id in target_requests:
-                                cursor.execute("delete from access_requests where id = ?", (req_id,))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"Successfully deleted {len(target_requests)} pending request(s)!")
-                        else:
-                            for email, name, req_ts, req_id in target_requests:
-                                cursor.execute("insert or replace into authorized_users (email, name, requested_at, approved_at) values (?, ?, ?, ?)", 
-                                               (email.lower(), name, req_ts, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                                cursor.execute("delete from access_requests where id = ?", (req_id,))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"Successfully approved {len(target_requests)} user(s)!")
-                        
-                        time.sleep(1.5)
-                        st.rerun()
+                        conn = get_db_connection()
+                        if conn:
+                            cursor = conn.cursor()
+                            if delete_selected:
+                                for email, name, req_ts, req_id in target_requests:
+                                    cursor.execute("delete from access_requests where id = %s", (req_id,))
+                                conn.commit()
+                                cursor.close()
+                                conn.close()
+                                st.success(f"Successfully deleted {len(target_requests)} pending request(s)!")
+                            else:
+                                for email, name, req_ts, req_id in target_requests:
+                                    cursor.execute("insert into authorized_users (email, name, requested_at, approved_at) values (%s, %s, %s, %s) on conflict (email) do nothing", 
+                                                   (email.lower(), name, req_ts, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                                    cursor.execute("delete from access_requests where id = %s", (req_id,))
+                                conn.commit()
+                                cursor.close()
+                                conn.close()
+                                st.success(f"Successfully approved {len(target_requests)} user(s)!")
+                            
+                            time.sleep(1.5)
+                            st.rerun()
                     except Exception as ex:
                         st.error(f"Error processing requests: {ex}")
 
@@ -1390,9 +1441,12 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                 st.rerun()
 
         try:
-            conn = sqlite3.connect(DB_FILE)
-            df_registered = pd.read_sql_query("select email, name, requested_at, approved_at from authorized_users order by approved_at desc", conn)
-            conn.close()
+            conn = get_db_connection()
+            if conn:
+                df_registered = pd.read_sql_query("select email, name, requested_at, approved_at from authorized_users order by approved_at desc", conn)
+                conn.close()
+            else:
+                df_registered = pd.DataFrame()
         except Exception:
             df_registered = pd.DataFrame()
 
@@ -1451,19 +1505,22 @@ elif is_admin and app_mode == "🔐 Access Requests Management":
                     st.warning("No valid users selected for unregistering.")
                 else:
                     try:
-                        conn = sqlite3.connect(DB_FILE)
-                        cursor = conn.cursor()
-                        for email, name, req_ts in users_to_unregister:
-                            cursor.execute("delete from authorized_users where email = ?", (email.lower(),))
-                            cursor.execute("""
-                                insert or ignore into access_requests (name, email, remarks, timestamp)
-                                values (?, ?, ?, ?)
-                            """, (name, email.lower(), "Unregistered by admin. Re-request required.", req_ts))
-                        conn.commit()
-                        conn.close()
-                        st.success(f"Successfully unregistered {len(users_to_unregister)} user(s) and moved them back to Pending Requests!")
-                        time.sleep(1.5)
-                        st.rerun()
+                        conn = get_db_connection()
+                        if conn:
+                            cursor = conn.cursor()
+                            for email, name, req_ts in users_to_unregister:
+                                cursor.execute("delete from authorized_users where email = %s", (email.lower(),))
+                                cursor.execute("""
+                                    insert into access_requests (name, email, remarks, timestamp)
+                                    values (%s, %s, %s, %s)
+                                    on conflict (email) do nothing
+                                """, (name, email.lower(), "Unregistered by admin. Re-request required.", req_ts))
+                            conn.commit()
+                            cursor.close()
+                            conn.close()
+                            st.success(f"Successfully unregistered {len(users_to_unregister)} user(s) and moved them back to Pending Requests!")
+                            time.sleep(1.5)
+                            st.rerun()
                     except Exception as ex:
                         st.error(f"Error unregistering users: {ex}")
 
@@ -1486,14 +1543,16 @@ elif app_mode == "📁 Report History Dashboard":
         if st.button("🗑️ Purge Course Records", type="secondary", key=f"purge_btn_{rc}"):
             if purge_lms.strip() and purge_assign.strip():
                 try:
-                    conn = sqlite3.connect(DB_FILE)
-                    cursor = conn.cursor()
-                    cursor.execute("delete from course_document_vault where lms_number = ? and assignment_name = ?", (purge_lms.strip(), purge_assign.strip()))
-                    cursor.execute("delete from course_metadata where lms_number = ? and assignment_name = ?", (purge_lms.strip(), purge_assign.strip()))
-                    cursor.execute("delete from ai_grades_vault where lms_number = ? and assignment_name = ?", (purge_lms.strip(), purge_assign.strip()))
-                    conn.commit()
-                    conn.close()
-                    st.success(f"Successfully purged all vaults and reports for LMS: {purge_lms} | Assignment: {purge_assign}")
+                    conn = get_db_connection()
+                    if conn:
+                        cursor = conn.cursor()
+                        cursor.execute("delete from course_document_vault where lms_number = %s and assignment_name = %s", (purge_lms.strip(), purge_assign.strip()))
+                        cursor.execute("delete from course_metadata where lms_number = %s and assignment_name = %s", (purge_lms.strip(), purge_assign.strip()))
+                        cursor.execute("delete from ai_grades_vault where lms_number = %s and assignment_name = %s", (purge_lms.strip(), purge_assign.strip()))
+                        conn.commit()
+                        cursor.close()
+                        conn.close()
+                        st.success(f"Successfully purged all vaults and reports for LMS: {purge_lms} | Assignment: {purge_assign}")
                 except Exception as ex:
                     st.error(f"Error purging records: {ex}")
             else:
@@ -1546,9 +1605,12 @@ elif app_mode == "📁 Report History Dashboard":
         with tab_audit_log:
             st.subheader("Plagiarism Checker Activity & Settings Audit Trail")
             try:
-                conn = sqlite3.connect(DB_FILE)
-                df_logs = pd.read_sql_query("select * from beta_user_activity order by timestamp desc", conn)
-                conn.close()
+                conn = get_db_connection()
+                if conn:
+                    df_logs = pd.read_sql_query("select * from beta_user_activity order by timestamp desc", conn)
+                    conn.close()
+                else:
+                    df_logs = pd.DataFrame()
                 
                 if not df_logs.empty:
                     st.dataframe(df_logs, use_container_width=True)
@@ -1568,9 +1630,12 @@ elif app_mode == "📁 Report History Dashboard":
         with tab_deep_log:
             st.subheader("Deep Dive Matcher (>50% Instances) Log")
             try:
-                conn = sqlite3.connect(DB_FILE)
-                df_deep = pd.read_sql_query("select * from beta_deep_dive_activity order by timestamp desc", conn)
-                conn.close()
+                conn = get_db_connection()
+                if conn:
+                    df_deep = pd.read_sql_query("select * from beta_deep_dive_activity order by timestamp desc", conn)
+                    conn.close()
+                else:
+                    df_deep = pd.DataFrame()
                 
                 if not df_deep.empty:
                     st.dataframe(df_deep, use_container_width=True)
