@@ -14,7 +14,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import difflib
 import psycopg2
 
-# --- GOOGLE LOGIN & SESSION SETUP ---
+# --- HIDE/BLOCK PAGE FOR NON-LOGGED-IN USERS ---
 user_is_logged_in = getattr(st.user, "is_logged_in", False)
 user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
 user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
@@ -35,7 +35,7 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher Suite", page_icon="📑", layout="centered")
 
-# --- NEON POSTGRESQL CONNECTION HELPER ---
+# --- NEON POSTGRESQL CONNECTION HELPER & TABLE INIT ---
 def get_db_connection():
     try:
         db_url = st.secrets["DATABASE_URL"]
@@ -43,6 +43,39 @@ def get_db_connection():
     except Exception as e:
         st.error(f"Database connection error: {e}")
         return None
+
+def init_neon_db():
+    conn = get_db_connection()
+    if not conn:
+        return
+    cursor = conn.cursor()
+    cursor.execute("""
+        create table if not exists authorized_users (
+            email text primary key,
+            name text,
+            requested_at text,
+            approved_at text
+        )
+    """)
+    cursor.execute("""
+        create table if not exists access_requests (
+            id serial primary key,
+            name text,
+            email text unique,
+            remarks text,
+            timestamp text
+        )
+    """)
+    cursor.execute("""
+        insert into authorized_users (email, name, requested_at, approved_at) 
+        values (%s, %s, %s, %s) 
+        on conflict (email) do nothing
+    """, ("arunpeswani@gmail.com", "Arun Peswani", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+init_neon_db()
 
 # --- COMPACT SIDEBAR CSS & CUSTOM BADGES ---
 st.markdown("""
@@ -87,19 +120,20 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- SESSION STATE INITIALIZATION ---
 if "reset_count" not in st.session_state:
     st.session_state.reset_count = 0
+if "edit_email_toggled" not in st.session_state:
+    st.session_state.edit_email_toggled = False
 
 rc = st.session_state.reset_count
 
 # ==========================================
-# GATED LOGIN CHECK
+# GATED LOGIN CHECK & AUTHORIZATION GATE
 # ==========================================
 if not user_is_logged_in:
     st.title("📑 APLens - Plagiarism & Matcher Suite")
     st.markdown("---")
-    st.info("🔒 **Authentication Required:** Please sign in with your Google account to access APLens.")
+    st.info("🔒 **Authentication Required:** Please sign in with your approved Google account to access APLens.")
     
     st.markdown("""
         <div style="padding-top: 15px;">
@@ -114,6 +148,98 @@ if not user_is_logged_in:
             </a>
         </div>
     """, unsafe_allow_html=True)
+    st.stop()
+
+def is_user_authorized(email):
+    if email.lower() == "arunpeswani@gmail.com":
+        return True
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return False
+        cursor = conn.cursor()
+        cursor.execute("select email from authorized_users where email = %s", (email.lower(),))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return bool(row)
+    except Exception:
+        return False
+
+if not is_user_authorized(user_email):
+    st.title("📑 APLens - Access Approval Required")
+    st.markdown("---")
+    
+    existing_request = False
+    try:
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("select id from access_requests where email = %s", (user_email.lower(),))
+            existing_request = bool(cursor.fetchone())
+            cursor.close()
+            conn.close()
+    except Exception:
+        pass
+
+    if existing_request:
+        st.warning(f"⏳ **Request Pending:** Your access request for **{user_email}** has already been submitted and is awaiting review by the administrator.")
+        if st.button("Sign Out / Switch Account", type="primary", key=f"unauth_signout_{rc}"):
+            st.logout()
+        st.stop()
+
+    st.info(f"👋 Hello **{user_name}** (`{user_email}`). Your account is not currently authorized to access APLens. Please submit an approval request below.")
+
+    with st.form(key=f"access_request_form_{rc}"):
+        req_name = st.text_input("Full Name", value=user_name)
+        
+        col_email_lbl, col_email_btn = st.columns([0.9, 0.1])
+        with col_email_lbl:
+            st.markdown("**Email ID**")
+        with col_email_btn:
+            if st.form_submit_button("✏️", help="Click to unlock and edit email address"):
+                st.session_state.edit_email_toggled = not st.session_state.get("edit_email_toggled", False)
+        
+        is_editable = st.session_state.get("edit_email_toggled", False)
+        if is_editable:
+            req_email = st.text_input("Edit Email ID", value=user_email, key=f"editable_email_input_{rc}")
+            st.caption("✏️ Email field is unlocked for editing.")
+        else:
+            req_email = st.text_input("Email ID (Locked)", value=user_email, disabled=True, key=f"locked_email_input_{rc}")
+            st.caption("🔒 Email ID is fetched from your Google login. Click the pencil icon above to edit.")
+
+        req_remarks = st.text_area("Remarks / Reason for Access", placeholder="e.g., Grader for Computer Science department batches...")
+        
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            submit_request = st.form_submit_button("Submit Request", type="primary", use_container_width=True)
+        with col_f2:
+            cancel_request = st.form_submit_button("Cancel & Sign Out", type="secondary", use_container_width=True)
+
+    if cancel_request:
+        st.logout()
+
+    if submit_request:
+        if not req_name.strip() or not req_email.strip():
+            st.error("Name and Email ID cannot be empty.")
+        else:
+            try:
+                conn = get_db_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        insert into access_requests (name, email, remarks, timestamp)
+                        values (%s, %s, %s, %s)
+                    """, (req_name.strip(), req_email.strip().lower(), req_remarks.strip(), datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+                st.success("✅ Access request submitted successfully! The administrator has been notified.")
+                time.sleep(2)
+                st.rerun()
+            except Exception as ex:
+                st.error("An access request for this email has already been submitted.")
+
     st.stop()
 
 # Header with User Profile
@@ -870,7 +996,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         count = st.session_state.deep_count
         label_text = "matching sentence(s)/line(s)!" if st.session_state.deep_result_type == "sentences" else "matching paragraph(s)!"
         st.success(f"Found {count} {label_text}")
-        st.text_area("Matching Preview", st.session_state.deep_report_content, height=300, key=f"deep_preview_area_{rc}")
+        st.text_app("Matching Preview", st.session_state.deep_report_content, height=300, key=f"deep_preview_area_{rc}")
         st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_report_{rc}")
 
     if not file1 or not file2:
@@ -908,7 +1034,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **The Matrix Structure:** The Excel spreadsheet is a symmetric cross-comparison table. Both the **Rows** and **Columns** "
         "represent the file names of the uploaded student submissions.\n"
         "* **Reading Cell Values:** Each cell contains a percentage value (from 0% to 100%) indicating how much textual overlap exists "
-        "between the document in that row and the document in that column.\n"
+        "between theector in that row and the document in that column.\n"
         "* **The Diagonal (100%):** The cells running diagonally from top-left to bottom-right will always show **100%**, because a document "
         "is being compared against itself.\n"
         "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
