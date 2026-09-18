@@ -35,7 +35,8 @@ register_heif_opener()
 
 st.set_page_config(page_title="APLens - Plagiarism & Matcher Suite", page_icon="📑", layout="centered")
 
-# --- NEON POSTGRESQL CONNECTION HELPER & TABLE INIT ---
+# --- OPTIMIZED CACHED NEON CONNECTION POOLING ---
+@st.cache_resource
 def get_db_connection():
     try:
         db_url = st.secrets["DATABASE_URL"]
@@ -66,6 +67,10 @@ def init_neon_db():
             timestamp text
         )
     """)
+    # Add indexes for lightning-fast user lookups under high concurrency
+    cursor.execute("create index if not exists idx_auth_email on authorized_users (email);")
+    cursor.execute("create index if not exists idx_req_email on access_requests (email);")
+    
     cursor.execute("""
         insert into authorized_users (email, name, requested_at, approved_at) 
         values (%s, %s, %s, %s) 
@@ -76,6 +81,20 @@ def init_neon_db():
     conn.close()
 
 init_neon_db()
+
+# --- CACHED DATA FETCHER FOR LIGHTNING-FAST ADMIN LISTS ---
+@st.cache_data(ttl=30)
+def get_cached_requests_and_users():
+    try:
+        conn = get_db_connection()
+        if not conn:
+            return pd.DataFrame(), pd.DataFrame()
+        df_reqs = pd.read_sql_query("select id, name, email, remarks, timestamp from access_requests order by timestamp desc", conn)
+        df_regs = pd.read_sql_query("select email, name, requested_at, approved_at from authorized_users order by approved_at desc", conn)
+        conn.close()
+        return df_reqs, df_regs
+    except Exception:
+        return pd.DataFrame(), pd.DataFrame()
 
 # --- COMPACT SIDEBAR CSS & CUSTOM BADGES ---
 st.markdown("""
@@ -234,6 +253,7 @@ if not is_user_authorized(user_email):
                     conn.commit()
                     cursor.close()
                     conn.close()
+                get_cached_requests_and_users.clear()
                 st.success("✅ Access request submitted successfully! The administrator has been notified.")
                 time.sleep(2)
                 st.rerun()
@@ -315,22 +335,7 @@ with st.sidebar.expander("🔒 Data Privacy & Security"):
         "Yes! Uploaded documents are processed entirely in memory "
         "for the duration of your analysis session. "
         "None of your files or text data are saved, logged, or "
-        "permanently stored on the cloud server.\n\n"
-        "* **Where they live in memory:** The uploaded documents are read into the temporary "
-        "memory (RAM) or processed via short-lived temporary files (`tempfile`) on the cloud "
-        "server specifically for the duration of that session.\n\n"
-        "* **Temporary lifecycle & navigation:** Your uploaded files remain temporarily available "
-        "only until your results are generated. As soon as you navigate away from the current page "
-        "or switch views, the active file handles are safely cleared and discarded from memory.\n\n"
-        "* **After running the analysis:** Once the similarity matrix or Deep Dive text-matching is "
-        "complete and your report is generated, the application finishes executing that request. In "
-        "the code, the temporary files are explicitly deleted using `os.unlink(path)` right after "
-        "processing, or they are automatically garbage-collected.\n\n"
-        "* **After closing the app/webpage:** As soon as you close your browser tab or your session "
-        "times out due to inactivity, the Streamlit server completely destroys that active container "
-        "session. **None of the student files are permanently stored on the cloud server's disk.**\n\n"
-        "Your data remains completely private to your active session and is discarded immediately after "
-        "use, making it safe and secure for checking sensitive submissions!"
+        "permanently stored on the cloud server."
     )
 
 def extract_text_from_file_obj(file_obj, filename_lower):
@@ -996,7 +1001,7 @@ elif app_mode == "Deep Dive (2-Doc Comparison)":
         count = st.session_state.deep_count
         label_text = "matching sentence(s)/line(s)!" if st.session_state.deep_result_type == "sentences" else "matching paragraph(s)!"
         st.success(f"Found {count} {label_text}")
-        st.text_app("Matching Preview", st.session_state.deep_report_content, height=300, key=f"deep_preview_area_{rc}")
+        st.text_area("Matching Preview", st.session_state.deep_report_content, height=300, key=f"deep_preview_area_{rc}")
         st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_report_{rc}")
 
     if not file1 or not file2:
@@ -1034,7 +1039,7 @@ elif app_mode == "💡 User Guide & Help":
         "* **The Matrix Structure:** The Excel spreadsheet is a symmetric cross-comparison table. Both the **Rows** and **Columns** "
         "represent the file names of the uploaded student submissions.\n"
         "* **Reading Cell Values:** Each cell contains a percentage value (from 0% to 100%) indicating how much textual overlap exists "
-        "between theector in that row and the document in that column.\n"
+        "between the document in that row and the document in that column.\n"
         "* **The Diagonal (100%):** The cells running diagonally from top-left to bottom-right will always show **100%**, because a document "
         "is being compared against itself.\n"
         "* **Identifying Potential Plagiarism:** Look for high percentage scores off the diagonal (e.g., matching or exceeding your configured **Flagging Threshold**). A high score "
