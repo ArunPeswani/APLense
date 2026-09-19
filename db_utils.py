@@ -2,6 +2,7 @@
 import streamlit as st
 import psycopg2
 import pandas as pd
+import os
 
 @st.cache_resource
 def get_db_connection():
@@ -18,11 +19,22 @@ def get_valid_db_connection():
         pass
     
     try:
-        db_url = st.secrets["DATABASE_URL"]
+        # Check Streamlit secrets first, fallback to OS environment variables if reloading
+        db_url = None
+        try:
+            db_url = st.secrets.get("DATABASE_URL")
+        except Exception:
+            pass
+            
+        if not db_url:
+            db_url = os.environ.get("DATABASE_URL")
+
+        if not db_url:
+            return None
+
         conn = psycopg2.connect(db_url)
         return conn
     except Exception as e:
-        st.error(f"Database connection error: {e}")
         return None
 
 @st.cache_data(ttl=30)
