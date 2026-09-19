@@ -36,7 +36,7 @@ supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg"
 st.sidebar.subheader("Analysis Settings")
 min_words = st.sidebar.slider("Minimum N-Gram Words", min_value=1, max_value=10, value=4, key=f"min_words_{rc}")
 max_words = st.sidebar.slider("Maximum N-Gram Words", min_value=1, max_value=10, value=6, key=f"max_words_{rc}")
-similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_value=10, max_value=100, value=40, step=5, key=f"sim_threshold_{rc}")
+similarity_threshold = st.sidebar.slider("🚨 Flagging Threshold (%)", min_value=10, max_value=100, value=40, step=5, key=f"sim_threshold_{rc}", help="Pairs exceeding this similarity percentage will be flagged as high risk.")
 save_reports_toggle = st.sidebar.toggle("💾 Save Generated Reports", value=True, key=f"save_toggle_{rc}")
 expiry_date = (datetime.datetime.now() + datetime.timedelta(days=60)).strftime("%Y-%m-%d")
 
@@ -44,7 +44,8 @@ reference_file = st.sidebar.file_uploader(
     "Upload Assignment Instructions/Syllabus (Optional)",
     type=list(supported_exts),
     key=f"global_ref_file_{rc}",
-    max_upload_size=5
+    max_upload_size=5,
+    help="Upload the assignment prompt or reference file once (Max 5MB). It will be saved and applied across future runs automatically!"
 )
 
 def extract_text_and_images_from_file(file_obj, filename_lower):
@@ -100,6 +101,10 @@ def extract_text_and_images_from_file(file_obj, filename_lower):
         text = f"document_content_fallback_{filename_lower}"
     return text, images_list
 
+global_reference_text = ""
+if reference_file:
+    global_reference_text, _ = extract_text_and_images_from_file(reference_file, reference_file.name.lower())
+
 st.header("File Similarity Matrix Analysis")
 st.write("Upload student submissions. If LMS Number and Assignment Name are provided, submissions will automatically be compared against historical submissions stored for that specific course and assignment.")
 
@@ -113,26 +118,23 @@ lms_val = lms_number_input.strip()
 assign_val = assignment_name_input.strip()
 is_cumulative = bool(lms_val and assign_val)
 
-global_reference_text = ""
-if reference_file:
-    global_reference_text, _ = extract_text_and_images_from_file(reference_file, reference_file.name.lower())
-    if is_cumulative:
-        try:
-            conn = get_valid_db_connection()
-            if conn:
-                cursor = conn.cursor()
-                cursor.execute("delete from course_metadata where lms_number = %s and assignment_name = %s", (lms_val, assign_val))
-                cursor.execute("""
-                    insert into course_metadata (lms_number, assignment_name, reference_text, timestamp)
-                    values (%s, %s, %s, %s)
-                """, (lms_val, assign_val, global_reference_text, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                conn.commit()
-                cursor.close()
-                conn.close()
-                st.success("📌 Instructions file uploaded and saved to vault for future runs under this LMS and Assignment!")
-        except Exception:
-            pass
-elif is_cumulative:
+if reference_file and is_cumulative:
+    try:
+        conn = get_valid_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("delete from course_metadata where lms_number = %s and assignment_name = %s", (lms_val, assign_val))
+            cursor.execute("""
+                insert into course_metadata (lms_number, assignment_name, reference_text, timestamp)
+                values (%s, %s, %s, %s)
+            """, (lms_val, assign_val, global_reference_text, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            st.success("📌 Instructions file uploaded and saved to vault for future runs under this LMS and Assignment!")
+    except Exception:
+        pass
+elif is_cumulative and not reference_file:
     try:
         conn = get_valid_db_connection()
         if conn:
@@ -226,7 +228,7 @@ if processed_files:
         total_to_process = len(processed_files)
         
         for idx, file in enumerate(processed_files):
-            status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name}")
+            status_text.text(f"Extracting text from file {idx+1} of {total_to_process}: {file.name} (OCR active)")
             progress_bar.progress(30 + int(40 * (idx + 1) / total_to_process))
             txt, _ = extract_text_and_images_from_file(file, file.name.lower())
             if global_reference_text.strip():
@@ -288,6 +290,47 @@ if processed_files:
             st.session_state.folder_analyzed = True
             st.session_state.analysis_type_run = analysis_mode_label
             st.session_state.beta_course = f"LMS: {lms_val} | Assignment: {assign_val}" if is_cumulative else (assign_val or "General Assignment")
+            
+            # Save activity tracking logs
+            total_files = len(filenames)
+            flat_scores = [similarity_matrix[i][j] for i in range(total_files) for j in range(total_files) if i != j]
+            max_sim = max(flat_scores) if flat_scores else 0.0
+            avg_sim = sum(flat_scores) / len(flat_scores) if flat_scores else 0.0
+            flagged_pairs_count = sum(1 for score in flat_scores if score >= similarity_threshold)
+            current_timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            try:
+                conn = get_valid_db_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        insert into beta_user_activity (
+                            user_email, user_name, timestamp, course, analysis_type, 
+                            files_scanned, min_ngram_words, max_ngram_words, 
+                            flagging_threshold, max_similarity, avg_similarity, flagged_pairs_count
+                        ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        user_email, user_name, current_timestamp, st.session_state.beta_course, analysis_mode_label,
+                        total_files, min_words, max_words, similarity_threshold,
+                        round(max_sim, 2), round(avg_sim, 2), flagged_pairs_count
+                    ))
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+            except Exception:
+                pass
+
+            if save_reports_toggle:
+                if "saved_reports" not in st.session_state:
+                    st.session_state.saved_reports = []
+                st.session_state.saved_reports.append({
+                    "timestamp": current_timestamp,
+                    "type": analysis_mode_label,
+                    "course": st.session_state.beta_course,
+                    "files_count": len(filenames),
+                    "df": df,
+                    "expiry": expiry_date
+                })
             st.rerun()
 
 if st.session_state.get("folder_analyzed", False):
@@ -317,3 +360,14 @@ if st.session_state.get("folder_analyzed", False):
     fig.update_layout(width=chart_dimension, height=chart_dimension, margin=dict(l=180, r=50, t=50, b=180), xaxis=dict(tickangle=-45, type='category'), yaxis=dict(autorange='reversed', type='category'))
     st.plotly_chart(fig, use_container_width=False)
     st.dataframe(df.style.format("{:.2f}%"))
+    
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Plagiarism Report')
+    st.download_button(
+        label="📥 Download Plagiarism Report (Excel)",
+        data=output.getvalue(),
+        file_name=f"plagiarism_report_{current_course.replace(' | ', '_').replace(': ', '_').replace(' ', '_')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"download_excel_report_{rc}"
+    )
