@@ -13,43 +13,13 @@ from pillow_heif import register_heif_opener
 register_heif_opener()
 
 from db_utils import get_valid_db_connection
-from auth import enforce_admin_or_whitelisted_access
+from auth import enforce_admin_or_whitelisted_access, render_page_header
 
+# 1. Enforce security gate
 enforce_admin_or_whitelisted_access()
 
-# --- USER PROFILE & ACCOUNT POPOVER HEADER ---
-user_is_logged_in = getattr(st.user, "is_logged_in", False)
-user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
-user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
-user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", None)) if user_is_logged_in else "https://www.w3schools.com/howto/img_avatar.png"
-
-if "reset_count_beta" not in st.session_state:
-    st.session_state.reset_count_beta = 0
-rc = st.session_state.reset_count_beta
-
-header_col1, header_col2 = st.columns([0.6, 0.4])
-with header_col1:
-    st.header("Deep Dive Matcher")
-with header_col2:
-    avatar_col, menu_col = st.columns([0.3, 0.7])
-    with avatar_col:
-        st.markdown(f"""
-            <div style="padding-top: 4px; text-align: right;">
-                <img src="{user_avatar}" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover;">
-            </div>
-        """, unsafe_allow_html=True)
-    with menu_col:
-        with st.popover("Account"):
-            st.markdown(f"""
-                <div style="text-align: center; padding: 10px 0px;">
-                    <img src="{user_avatar}" style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover; margin-bottom: 6px;">
-                    <div style="font-weight: 600; font-size: 14px; color: #202124;">{user_name}</div>
-                    <div style="font-size: 12px; color: #5f6368; margin-top: 2px; word-break: break-all;">{user_email}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            st.markdown("---")
-            if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_deep_{rc}"):
-                st.logout()
+# 2. Render centralized header with profile picture and logout dropdown
+render_page_header("Deep Dive Matcher")
 
 st.write("Compare two specific documents or spreadsheets sheet-by-sheet to extract exact matching sentences or true paragraphs.")
 
@@ -75,9 +45,11 @@ supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg"
 
 col1, col2 = st.columns(2)
 with col1:
-    file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=list(supported_exts), max_upload_size=5, key=f"deep_file1_{rc}")
+    file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=list(supported_exts), max_upload_size=5, key=f"deep_file1_{st.session_state.get('reset_count_beta', 0)}")
 with col2:
-    file2 = st.file_uploader("Select Student B Document (Max 5MB)", type=list(supported_exts), max_upload_size=5, key=f"deep_file2_{rc}")
+    file2 = st.file_uploader("Select Student B Document (Max 5MB)", type=list(supported_exts), max_upload_size=5, key=f"deep_file2_{st.session_state.get('reset_count_beta', 0)}")
+
+rc = st.session_state.get('reset_count_beta', 0)
 
 def get_file_bytes_temp(uploaded_file):
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
@@ -249,6 +221,10 @@ if file1 and file2:
         path1 = get_file_bytes_temp(file1)
         path2 = get_file_bytes_temp(file2)
         try:
+            user_is_logged_in = getattr(st.user, "is_logged_in", False)
+            user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
+            user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
+
             if is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis" and run_deep_para:
                 breakdown = get_excel_sheet_breakdown(path1, path2, global_ref_deep, paraphrase_mode=True)
                 st.session_state.deep_result_type = "excel_sheets_paraphrase"
