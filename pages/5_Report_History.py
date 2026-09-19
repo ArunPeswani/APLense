@@ -1,3 +1,6 @@
+from auth import enforce_admin_or_whitelisted_access # (or whatever function you named it in auth.py)
+enforce_admin_or_whitelisted_access()
+
 # ==========================================
 # MODE 5: REPORT HISTORY DASHBOARD & ADMIN AUDIT TRAIL
 # ==========================================
