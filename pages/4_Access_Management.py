@@ -13,7 +13,7 @@ user_email = getattr(st.user, "email", "")
 is_admin = user_email.lower() == "arunpeswani@gmail.com"
 
 if not is_admin:
-    st.error("Access Denied. Restricted to administrator.")
+    st.error("Access Denied. Please contact Arun Peswani for access approvals.")
     st.stop()
 
 if "reset_count_beta" not in st.session_state:
