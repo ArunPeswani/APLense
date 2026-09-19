@@ -173,7 +173,7 @@ def get_document_true_paragraphs(file_path, reference_text=""):
         if prompt_words:
             cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
-        # TRUE PARAGRAPH REQUIREMENT: At least 2 sentences AND 25 words to prevent single-line plant tables from matching
+        # TRUE PARAGRAPH REQUIREMENT: At least 2 sentences AND 25 words
         if len(sentences) >= 2 and len(cleaned_block.split()) >= 25:
             valid_paragraphs.append(cleaned_block)
     return valid_paragraphs
@@ -207,7 +207,7 @@ def get_excel_sheet_breakdown(path1, path2, reference_text="", paraphrase_mode=F
                     for u2 in sents2:
                         if u1.lower() == u2.lower(): continue
                         score = calculate_paraphrase_score(u1, u2)
-                        if 55.0 <= score < 100.0:
+                        if 40.0 <= score < 100.0:
                             pair_key = tuple(sorted([u1.lower(), u2.lower()]))
                             if pair_key not in seen_pairs:
                                 seen_pairs.add(pair_key)
@@ -276,7 +276,7 @@ if file1 and file2:
                         for u2 in units2:
                             if u1.lower() == u2.lower(): continue
                             score = calculate_paraphrase_score(u1, u2)
-                            if 55.0 <= score < 100.0:
+                            if 40.0 <= score < 100.0:
                                 pair_key = tuple(sorted([u1.lower(), u2.lower()]))
                                 if pair_key not in seen_pairs:
                                     seen_pairs.add(pair_key)
@@ -289,7 +289,6 @@ if file1 and file2:
                     st.session_state.deep_report_content = report_content
                     st.session_state.deep_filename = "paraphrase_sentences_report.txt"
                 else:
-                    # Exact sentence match with clear attribution
                     sents1 = get_document_lines_and_sentences(path1, global_ref_deep)
                     sents2 = get_document_lines_and_sentences(path2, global_ref_deep)
                     common = sorted(sents1.intersection(sents2))
@@ -311,7 +310,7 @@ if file1 and file2:
                         for p2 in paras2:
                             if p1.lower() == p2.lower(): continue
                             score = calculate_paraphrase_score(p1, p2)
-                            if 55.0 <= score < 100.0:
+                            if 40.0 <= score < 100.0:
                                 pair_key = tuple(sorted([p1.lower(), p2.lower()]))
                                 if pair_key not in seen_pairs:
                                     seen_pairs.add(pair_key)
