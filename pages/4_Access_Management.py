@@ -4,9 +4,13 @@ import time
 import datetime
 
 from db_utils import get_valid_db_connection, get_cached_requests_and_users
-from auth import enforce_admin_or_whitelisted_access
+from auth import enforce_admin_or_whitelisted_access, render_page_header
 
+# 1. Enforce security gate
 enforce_admin_or_whitelisted_access()
+
+# 2. Render the top header with profile picture and logout dropdown in one clean line
+render_page_header("Deep Dive Matcher")
 
 user_is_logged_in = getattr(st.user, "is_logged_in", False)
 user_email = getattr(st.user, "email", "")
