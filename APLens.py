@@ -185,6 +185,7 @@ if not user_is_logged_in:
     """, unsafe_allow_html=True)
     st.stop()
 
+@st.cache_data(ttl=300)
 def is_user_authorized(email):
     if email.lower() == "arunpeswani@gmail.com":
         return True
