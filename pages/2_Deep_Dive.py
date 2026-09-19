@@ -15,6 +15,10 @@ from auth import enforce_admin_or_whitelisted_access
 
 enforce_admin_or_whitelisted_access()
 
+user_is_logged_in = getattr(st.user, "is_logged_in", False)
+user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
+user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
+
 if "reset_count_beta" not in st.session_state:
     st.session_state.reset_count_beta = 0
 rc = st.session_state.reset_count_beta
@@ -67,10 +71,16 @@ def get_document_lines_and_sentences(file_path, reference_text=""):
         for page in reader.pages:
             extracted = page.extract_text()
             if extracted: full_text_pdf += extracted + "\n\n"
+        if len(full_text_pdf.strip()) < 15:
+            with open(file_path, "rb") as f: pdf_bytes = f.read()
+            images = convert_from_bytes(pdf_bytes)
+            for img in images:
+                img_gray = img.convert('L')
+                img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.5)
+                full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
         raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
     elif ext in ('.txt', '.rtf', '.md'):
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            full_text_txt = f.read()
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f: full_text_txt = f.read()
         raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
     elif ext in ('.xlsx', '.xls'):
         xls = pd.ExcelFile(file_path)
@@ -80,6 +90,11 @@ def get_document_lines_and_sentences(file_path, reference_text=""):
             tokens = [str(val).strip() for val in df.values.flatten() if pd.notna(val) and str(val).strip().lower() != 'nan']
             full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
         raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
+    elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
+        image = Image.open(file_path).convert('L')
+        image = ImageEnhance.Contrast(image).enhance(2.5)
+        full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
+        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
     
     prompt_words = set(reference_text.split()) if reference_text else set()
     units = set()
@@ -94,30 +109,181 @@ def get_document_lines_and_sentences(file_path, reference_text=""):
             if is_valid_sentence(s): units.add(s)
     return units
 
+def get_document_true_paragraphs(file_path, reference_text=""):
+    ext = os.path.splitext(file_path)[1].lower()
+    raw_blocks = []
+    if ext == '.docx':
+        import docx
+        doc = docx.Document(file_path)
+        raw_blocks = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    elif ext == '.pdf':
+        reader = PdfReader(file_path)
+        full_text_pdf = ""
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted: full_text_pdf += extracted + "\n\n"
+        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
+    elif ext in ('.txt', '.rtf', '.md'):
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f: full_text_txt = f.read()
+        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
+    elif ext in ('.xlsx', '.xls'):
+        xls = pd.ExcelFile(file_path)
+        full_text_excel = ""
+        for sheet_name in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+            tokens = [str(val).strip() for val in df.values.flatten() if pd.notna(val) and str(val).strip().lower() != 'nan']
+            full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
+        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
+    
+    prompt_words = set(reference_text.split()) if reference_text else set()
+    valid_paragraphs = []
+    for block in raw_blocks:
+        cleaned_block = re.sub(r'\s+', ' ', block)
+        if prompt_words:
+            cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
+        if len(sentences) >= 1 and len(cleaned_block.split()) >= 4:
+            valid_paragraphs.append(cleaned_block)
+    return valid_paragraphs
+
+def get_excel_sheet_breakdown(path1, path2, reference_text="", paraphrase_mode=False):
+    xls1 = pd.ExcelFile(path1)
+    xls2 = pd.ExcelFile(path2)
+    sheets1 = xls1.sheet_names
+    sheets2 = xls2.sheet_names
+    all_sheets = sorted(list(set(sheets1).union(set(sheets2))))
+    prompt_words = set(reference_text.split()) if reference_text else set()
+    breakdown_results = []
+    
+    for sname in all_sheets:
+        sheet_data = {"sheet": sname, "in_both": sname in sheets1 and sname in sheets2}
+        if sheet_data["in_both"]:
+            df1 = pd.read_excel(xls1, sheet_name=sname, header=None).fillna("")
+            df2 = pd.read_excel(xls2, sheet_name=sname, header=None).fillna("")
+            def extract_sentences_from_df(df):
+                text_blob = " ".join([str(v).strip() for v in df.values.flatten() if str(v).strip() and str(v).lower() != 'nan'])
+                if prompt_words:
+                    text_blob = " ".join([w for w in text_blob.split() if w not in prompt_words or len(prompt_words) < 5])
+                sub_sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text_blob) if s.strip()]
+                return [s for s in sub_sents if is_valid_sentence(s)]
+            sents1 = extract_sentences_from_df(df1)
+            sents2 = extract_sentences_from_df(df2)
+            if paraphrase_mode:
+                matched_pairs = []
+                for u1 in sents1:
+                    for u2 in sents2:
+                        if u1 == u2: continue
+                        ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
+                        if 0.65 <= ratio < 1.0:
+                            matched_pairs.append((u1, u2, round(ratio * 100, 1)))
+                matched_pairs.sort(key=lambda x: x[2], reverse=True)
+                sheet_data["paraphrase_pairs"] = matched_pairs
+                sheet_data["count"] = len(matched_pairs)
+            else:
+                common_sents = sorted(list(set(sents1).intersection(set(sents2))))
+                sheet_data["common_sentences"] = common_sents
+                sheet_data["count"] = len(common_sents)
+        else:
+            sheet_data["paraphrase_pairs" if paraphrase_mode else "common_sentences"] = []
+            sheet_data["count"] = 0
+        breakdown_results.append(sheet_data)
+    return breakdown_results
+
 if file1 and file2:
-    if st.button("Run Deep Dive Matcher", type="primary", key=f"run_deep_dive_{rc}"):
+    is_excel_comparison = file1.name.lower().endswith(('.xlsx', '.xls')) and file2.name.lower().endswith(('.xlsx', '.xls'))
+    analysis_type = st.radio("Select Match Type", ["Sheet-by-Sheet Analysis", "Sentence Comparison", "Paragraph Comparison"], key=f"deep_match_type_{rc}") if is_excel_comparison else st.radio("Select Match Type", ["Sentence Comparison", "Paragraph Comparison"], key=f"deep_match_type_{rc}")
+    
+    col_deep1, col_deep2 = st.columns(2)
+    with col_deep1: run_deep = st.button("Run Deep Dive Matcher", type="primary", key=f"run_deep_dive_{rc}")
+    with col_deep2: run_deep_para = st.button("🔍 Run Paraphrase Matcher", type="secondary", key=f"run_deep_para_{rc}")
+
+    if run_deep or run_deep_para:
         path1 = get_file_bytes_temp(file1)
         path2 = get_file_bytes_temp(file2)
         try:
-            units1 = list(get_document_lines_and_sentences(path1, global_ref_deep))
-            units2 = list(get_document_lines_and_sentences(path2, global_ref_deep))
-            high_match_instances = []
-            for u1 in units1:
-                for u2 in units2:
-                    ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() * 100
-                    if ratio >= 50.0:
-                        high_match_instances.append({"doc_a_sentence": u1, "doc_b_sentence": u2, "similarity": round(ratio, 1)})
-            high_match_instances.sort(key=lambda x: x["similarity"], reverse=True)
-            st.session_state.deep_high_matches = high_match_instances
-            st.session_state.deep_analyzed = True
+            if is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis" and run_deep_para:
+                breakdown = get_excel_sheet_breakdown(path1, path2, global_ref_deep, paraphrase_mode=True)
+                st.session_state.deep_result_type = "excel_sheets_paraphrase"
+                st.session_state.deep_excel_breakdown = breakdown
+                report_content = f"Excel Sheet-by-Sheet Paraphrase Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
+                for item in breakdown:
+                    report_content += f"Sheet Name: {item['sheet']}\n"
+                    if item['in_both']:
+                        for p1, p2, score in item['paraphrase_pairs']:
+                            report_content += f"  • [Similarity: {score}%]\n    - A: {p1}\n    - B: {p2}\n"
+                st.session_state.deep_report_content = report_content
+                st.session_state.deep_filename = "excel_sheet_paraphrase_report.txt"
+            elif is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis":
+                breakdown = get_excel_sheet_breakdown(path1, path2, global_ref_deep, paraphrase_mode=False)
+                st.session_state.deep_result_type = "excel_sheets"
+                st.session_state.deep_excel_breakdown = breakdown
+                report_content = f"Excel Sheet-by-Sheet Comparison Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
+                for item in breakdown:
+                    report_content += f"Sheet Name: {item['sheet']}\n"
+                    if item['in_both']:
+                        for s in item['common_sentences']: report_content += f"  • {s}\n"
+                st.session_state.deep_report_content = report_content
+                st.session_state.deep_filename = "excel_sheet_comparison_report.txt"
+            elif run_deep_para:
+                units1 = list(get_document_lines_and_sentences(path1, global_ref_deep))
+                units2 = list(get_document_lines_and_sentences(path2, global_ref_deep))
+                pairs = [(u1, u2, round(difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() * 100, 1)) for u1 in units1 for u2 in units2 if u1 != u2 and 0.65 <= difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() < 1.0]
+                pairs.sort(key=lambda x: x[2], reverse=True)
+                st.session_state.deep_result_type = "paraphrased_matches"
+                st.session_state.deep_para_pairs = pairs
+                report_content = f"Paraphrase Deep Dive Report\n" + "="*70 + "\n\n"
+                for p1, p2, score in pairs: report_content += f"[Similarity: {score}%]\n- Doc A: {p1}\n- Doc B: {p2}\n\n"
+                st.session_state.deep_report_content = report_content
+                st.session_state.deep_filename = "paraphrase_report.txt"
+            elif analysis_type == "Sentence Comparison":
+                common = sorted(get_document_lines_and_sentences(path1, global_ref_deep).intersection(get_document_lines_and_sentences(path2, global_ref_deep)))
+                st.session_state.deep_result_type = "empty_sentences" if not common else "sentences"
+                st.session_state.deep_count = len(common)
+                st.session_state.deep_report_content = "\n\n".join(common)
+                st.session_state.deep_filename = "sentences_report.txt"
+            else:
+                common = sorted(set(get_document_true_paragraphs(path1, global_ref_deep)).intersection(set(get_document_true_paragraphs(path2, global_ref_deep))))
+                st.session_state.deep_result_type = "empty_paras" if not common else "paragraphs"
+                st.session_state.deep_count = len(common)
+                st.session_state.deep_report_content = "\n\n".join(common)
+                st.session_state.deep_filename = "paragraphs_report.txt"
+            
+            # Save activity tracking logs
+            try:
+                conn = get_valid_db_connection()
+                if conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        insert into beta_deep_dive_activity (
+                            user_email, user_name, timestamp, doc_a_name, doc_b_name, 
+                            high_match_count_over_50pct, top_matches_summary
+                        ) values (%s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        user_email, user_name, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        file1.name, file2.name, 1, "Deep dive analysis executed"
+                    ))
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+            except Exception:
+                pass
         finally:
             if os.path.exists(path1): os.unlink(path1)
             if os.path.exists(path2): os.unlink(path2)
 
-if st.session_state.get("deep_analyzed", False):
-    matches = st.session_state.deep_high_matches
-    st.success(f"Deep Dive Complete! Found **{len(matches)} matching instance(s)** with ≥50% similarity.")
-    for item in matches:
-        with st.expander(f"Similarity: {item['similarity']}%"):
-            st.markdown(f"**Doc A:** {item['doc_a_sentence']}")
-            st.markdown(f"**Doc B:** {item['doc_b_sentence']}")
+if st.session_state.get("deep_result_type") == "paraphrased_matches":
+    pairs = st.session_state.deep_para_pairs
+    st.success(f"Found {len(pairs)} potential paraphrased match(es)!")
+    for p1, p2, score in pairs:
+        with st.expander(f"Similarity Score: {score}%"):
+            st.markdown(f"**Doc A:** {p1}")
+            st.markdown(f"**Doc B:** {p2}")
+    st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"dl_deep_{rc}")
+elif st.session_state.get("deep_result_type") in ["sentences", "paragraphs"]:
+    st.success(f"Found {st.session_state.deep_count} matching instance(s)!")
+    st.text_area("Preview", st.session_state.deep_report_content, height=250, key=f"deep_prev_{rc}")
+    st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"dl_deep_{rc}")
+elif st.session_state.get("deep_result_type") == "empty_sentences":
+    st.info("Found 0 matching sentences.")
+elif st.session_state.get("deep_result_type") == "empty_paras":
+    st.info("Found 0 matching paragraphs.")
