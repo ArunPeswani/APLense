@@ -3,9 +3,13 @@ import streamlit as st
 import pandas as pd
 
 from db_utils import get_valid_db_connection
-from auth import enforce_admin_or_whitelisted_access
+from auth import enforce_admin_or_whitelisted_access, render_page_header
 
+# 1. Enforce security gate
 enforce_admin_or_whitelisted_access()
+
+# 2. Render the top header with profile picture and logout dropdown in one clean line
+render_page_header("Deep Dive Matcher")
 
 # --- RESTRICT TO ADMIN ONLY ---
 user_email = getattr(st.user, "email", "")
