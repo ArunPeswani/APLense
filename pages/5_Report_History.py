@@ -10,7 +10,7 @@ enforce_admin_or_whitelisted_access()
 # --- RESTRICT TO ADMIN ONLY ---
 user_email = getattr(st.user, "email", "")
 if user_email.lower() != "arunpeswani@gmail.com":
-    st.error("Access Denied. The AI Grader suite is currently restricted to the administrator.")
+    st.error("Access Denied. The Report History dashboard is currently restricted to the administrator.")
     st.stop()
 
 user_is_logged_in = getattr(st.user, "is_logged_in", False)
