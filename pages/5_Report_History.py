@@ -30,6 +30,8 @@ with col_purge3:
                 if conn:
                     cursor = conn.cursor()
                     cursor.execute("delete from course_document_vault where lms_number = %s and assignment_name = %s", (purge_lms.strip(), purge_assign.strip()))
+                    cursor.execute("delete from course_metadata where lms_number = %s and assignment_name = %s", (purge_lms.strip(), purge_assign.strip()))
+                    cursor.execute("delete from ai_grades_vault where lms_number = %s and assignment_name = %s", (purge_lms.strip(), purge_assign.strip()))
                     conn.commit()
                     cursor.close()
                     conn.close()
@@ -38,3 +40,49 @@ with col_purge3:
                 st.error(f"Error: {ex}")
         else:
             st.warning("Provide both LMS Number and Assignment Name.")
+
+st.markdown("---")
+if is_admin:
+    tab_my_reports, tab_audit_log, tab_deep_log = st.tabs(["My Saved Reports", "📊 User Activity & Settings Log", "🔍 Deep Dive Log"])
+else:
+    tab_my_reports, = st.tabs(["My Saved Reports"])
+
+with tab_my_reports:
+    saved_reports = st.session_state.get("saved_reports", [])
+    if not saved_reports:
+        st.info("No reports saved yet in this session.")
+    else:
+        for idx, rep in enumerate(reversed(saved_reports)):
+            with st.expander(f"📌 [{rep['timestamp']}] {rep['course']} — {rep['type']} ({rep['files_count']} files)"):
+                st.dataframe(rep['df'].style.format("{:.2f}%"))
+                h_output = io.BytesIO()
+                with pd.ExcelWriter(h_output, engine='openpyxl') as writer:
+                    rep['df'].to_excel(writer, sheet_name='Report')
+                st.download_button("📥 Download Report", data=h_output.getvalue(), file_name=f"report_{idx}.xlsx", key=f"hist_dl_{idx}_{rc}")
+
+if is_admin:
+    with tab_audit_log:
+        st.subheader("Plagiarism Checker Activity Audit Trail")
+        try:
+            conn = get_valid_db_connection()
+            if conn:
+                df_logs = pd.read_sql_query("select * from beta_user_activity order by timestamp desc", conn)
+                conn.close()
+                st.dataframe(df_logs, use_container_width=True)
+            else:
+                st.info("No logs found.")
+        except Exception as e:
+            st.warning(f"Could not load logs: {e}")
+
+    with tab_deep_log:
+        st.subheader("Deep Dive Matcher Log")
+        try:
+            conn = get_valid_db_connection()
+            if conn:
+                df_deep = pd.read_sql_query("select * from beta_deep_dive_activity order by timestamp desc", conn)
+                conn.close()
+                st.dataframe(df_deep, use_container_width=True)
+            else:
+                st.info("No logs found.")
+        except Exception as e:
+            st.warning(f"Could not load logs: {e}")
