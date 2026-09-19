@@ -93,7 +93,11 @@ def init_neon_db():
     cursor.close()
     conn.close()
 
-init_neon_db()
+# Initialize database and cache only ONCE per session to make navigation instant
+if "db_initialized" not in st.session_state:
+    init_neon_db()
+    get_cached_requests_and_users()
+    st.session_state.db_initialized = True
 
 # --- CACHED DATA FETCHER FOR LIGHTNING-FAST ADMIN LISTS ---
 @st.cache_data(ttl=30)
