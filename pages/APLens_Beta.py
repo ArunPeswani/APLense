@@ -169,7 +169,41 @@ def get_cached_requests_and_users():
     except Exception:
         return pd.DataFrame(), pd.DataFrame()
 
-# --- INITIALIZE DATABASE & WARM UP CACHE ONCE PER SESSION (PREVENTS NAVIGATION LAG) ---
+# --- CACHED API KEY FETCHER TO PREVENT SIDEBAR LAG ---
+@st.cache_data(ttl=300)
+def get_user_api_key(email):
+    try:
+        conn = get_valid_db_connection()
+        if not conn:
+            return ""
+        cursor = conn.cursor()
+        cursor.execute("select api_key from grader_api_keys where email = %s", (email,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return row[0] if row else ""
+    except Exception:
+        return ""
+
+def save_user_api_key(email, key):
+    try:
+        conn = get_valid_db_connection()
+        if not conn:
+            return
+        cursor = conn.cursor()
+        cursor.execute("""
+            insert into grader_api_keys (email, api_key, updated_at) 
+            values (%s, %s, %s) 
+            on conflict (email) do update set api_key = EXCLUDED.api_key, updated_at = EXCLUDED.updated_at
+        """, (email, key, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        get_user_api_key.clear()
+    except Exception:
+        pass
+
+# --- INITIALIZE DATABASE & WARM UP CACHE ONCE PER SESSION ---
 if "db_initialized" not in st.session_state:
     init_neon_db()
     get_cached_requests_and_users()
@@ -388,37 +422,6 @@ with header_col2:
             st.markdown("---")
             if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_btn_{rc}"):
                 st.logout()
-
-def get_user_api_key(email):
-    try:
-        conn = get_valid_db_connection()
-        if not conn:
-            return ""
-        cursor = conn.cursor()
-        cursor.execute("select api_key from grader_api_keys where email = %s", (email,))
-        row = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        return row[0] if row else ""
-    except Exception:
-        return ""
-
-def save_user_api_key(email, key):
-    try:
-        conn = get_valid_db_connection()
-        if not conn:
-            return
-        cursor = conn.cursor()
-        cursor.execute("""
-            insert into grader_api_keys (email, api_key, updated_at) 
-            values (%s, %s, %s) 
-            on conflict (email) do update set api_key = EXCLUDED.api_key, updated_at = EXCLUDED.updated_at
-        """, (email, key, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-        conn.commit()
-        cursor.close()
-        conn.close()
-    except Exception:
-        pass
 
 nav_options = ["Plagiarism Checker", "Deep Dive (2-Doc Comparison)", "🤖 AI Grader & Rubric Evaluation", "📁 Report History Dashboard", "💡 User Guide & Help"]
 
@@ -1719,3 +1722,4 @@ elif app_mode == "💡 User Guide & Help":
     st.write(
         "For assistance, please contact **Arun Peswani**."
     )
+    
