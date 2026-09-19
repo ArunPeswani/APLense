@@ -64,6 +64,15 @@ def is_valid_sentence(sentence):
         return False
     return True
 
+def calculate_paraphrase_score(text1, text2):
+    s = difflib.SequenceMatcher(None, text1.lower(), text2.lower())
+    words1 = set(text1.lower().split())
+    words2 = set(text2.lower().split())
+    jaccard = len(words1.intersection(words2)) / max(len(words1.union(words2)), 1)
+    # Hybrid score: 50% sequence matcher + 50% shared vocabulary Jaccard score
+    score = ((s.ratio() * 0.5) + (jaccard * 0.5)) * 100
+    return round(score, 1)
+
 def get_document_lines_and_sentences(file_path, reference_text=""):
     ext = os.path.splitext(file_path)[1].lower()
     raw_blocks = []
@@ -93,17 +102,16 @@ def get_document_lines_and_sentences(file_path, reference_text=""):
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
         elif ext in ('.xlsx', '.xls'):
             xls = pd.ExcelFile(file_path)
-            full_text_excel = ""
             for sheet_name in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
-                tokens = []
                 for val in df.values.flatten():
                     if pd.notna(val):
                         val_str = str(val).strip()
                         if val_str and val_str.lower() != 'nan':
-                            tokens.append(val_str)
-                full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
+                            sub_parts = re.split(r'\n+|\d+\.\s+', val_str)
+                            for part in sub_parts:
+                                if part.strip():
+                                    raw_blocks.append(part.strip())
         elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
             image = Image.open(file_path).convert('L')
             image = ImageEnhance.Contrast(image).enhance(2.0)
@@ -146,12 +154,16 @@ def get_document_true_paragraphs(file_path, reference_text=""):
             raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
         elif ext in ('.xlsx', '.xls'):
             xls = pd.ExcelFile(file_path)
-            full_text_excel = ""
             for sheet_name in xls.sheet_names:
                 df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
-                tokens = [str(val).strip() for val in df.values.flatten() if pd.notna(val) and str(val).strip().lower() != 'nan']
-                full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
-            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
+                for val in df.values.flatten():
+                    if pd.notna(val):
+                        val_str = str(val).strip()
+                        if val_str and val_str.lower() != 'nan':
+                            sub_parts = re.split(r'\n+|\d+\.\s+', val_str)
+                            for part in sub_parts:
+                                if part.strip():
+                                    raw_blocks.append(part.strip())
     except Exception:
         pass
     
@@ -162,7 +174,7 @@ def get_document_true_paragraphs(file_path, reference_text=""):
         if prompt_words:
             cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
-        if len(sentences) >= 2 and len(cleaned_block.split()) >= 8:
+        if len(sentences) >= 1 and len(cleaned_block.split()) >= 8:
             valid_paragraphs.append(cleaned_block)
     return valid_paragraphs
 
@@ -193,9 +205,9 @@ def get_excel_sheet_breakdown(path1, path2, reference_text="", paraphrase_mode=F
                 for u1 in sents1:
                     for u2 in sents2:
                         if u1 == u2: continue
-                        ratio = difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio()
-                        if 0.65 <= ratio < 1.0:
-                            matched_pairs.append((u1, u2, round(ratio * 100, 1)))
+                        score = calculate_paraphrase_score(u1, u2)
+                        if 25.0 <= score < 100.0:
+                            matched_pairs.append((u1, u2, score))
                 matched_pairs.sort(key=lambda x: x[2], reverse=True)
                 sheet_data["paraphrase_pairs"] = matched_pairs
                 sheet_data["count"] = len(matched_pairs)
@@ -254,7 +266,8 @@ if file1 and file2:
                 if run_deep_para:
                     units1 = list(get_document_lines_and_sentences(path1, global_ref_deep))
                     units2 = list(get_document_lines_and_sentences(path2, global_ref_deep))
-                    pairs = [(u1, u2, round(difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() * 100, 1)) for u1 in units1 for u2 in units2 if u1 != u2 and 0.65 <= difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() < 1.0]
+                    pairs = [(u1, u2, calculate_paraphrase_score(u1, u2)) for u1 in units1 for u2 in units2 if u1 != u2]
+                    pairs = [p for p in pairs if 25.0 <= p[2] < 100.0]
                     pairs.sort(key=lambda x: x[2], reverse=True)
                     st.session_state.deep_result_type = "paraphrased_matches"
                     st.session_state.deep_para_pairs = pairs
@@ -273,7 +286,8 @@ if file1 and file2:
                 if run_deep_para:
                     paras1 = list(get_document_true_paragraphs(path1, global_ref_deep))
                     paras2 = list(get_document_true_paragraphs(path2, global_ref_deep))
-                    para_pairs = [(p1, p2, round(difflib.SequenceMatcher(None, p1.lower(), p2.lower()).ratio() * 100, 1)) for p1 in paras1 for p2 in paras2 if p1 != p2 and 0.65 <= difflib.SequenceMatcher(None, p1.lower(), p2.lower()).ratio() < 1.0]
+                    para_pairs = [(p1, p2, calculate_paraphrase_score(p1, p2)) for p1 in paras1 for p2 in paras2 if p1 != p2]
+                    para_pairs = [p for p in para_pairs if 25.0 <= p[2] < 100.0]
                     para_pairs.sort(key=lambda x: x[2], reverse=True)
                     st.session_state.deep_result_type = "paraphrased_paragraphs"
                     st.session_state.deep_para_pairs = para_pairs
