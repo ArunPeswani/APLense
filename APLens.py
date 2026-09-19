@@ -80,7 +80,6 @@ def init_neon_db():
             timestamp text
         )
     """)
-    # Add indexes for lightning-fast user lookups under high concurrency
     cursor.execute("create index if not exists idx_auth_email on authorized_users (email);")
     cursor.execute("create index if not exists idx_req_email on access_requests (email);")
     
@@ -93,13 +92,7 @@ def init_neon_db():
     cursor.close()
     conn.close()
 
-# Initialize database and cache only ONCE per session to make navigation instant
-if "db_initialized" not in st.session_state:
-    init_neon_db()
-    get_cached_requests_and_users()
-    st.session_state.db_initialized = True
-
-# --- CACHED DATA FETCHER FOR LIGHTNING-FAST ADMIN LISTS ---
+# --- CACHED DATA FETCHER (DEFINED BEFORE USAGE) ---
 @st.cache_data(ttl=30)
 def get_cached_requests_and_users():
     try:
@@ -113,8 +106,11 @@ def get_cached_requests_and_users():
     except Exception:
         return pd.DataFrame(), pd.DataFrame()
 
-# Preload cache immediately on startup
-get_cached_requests_and_users()
+# --- INITIALIZE DATABASE & WARM UP CACHE ONCE PER SESSION ---
+if "db_initialized" not in st.session_state:
+    init_neon_db()
+    get_cached_requests_and_users()
+    st.session_state.db_initialized = True
 
 # --- COMPACT SIDEBAR CSS & CUSTOM BADGES ---
 st.markdown("""
