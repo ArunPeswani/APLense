@@ -1,5 +1,9 @@
 import streamlit as st
 from db_utils import get_valid_db_connection, get_cached_requests_and_users
+from auth import enforce_admin_or_whitelisted_access
+
+# Enforce security gate on every page load
+enforce_admin_or_whitelisted_access()
 
 st.set_page_config(page_title="APLens Beta Suite", page_icon="🧪", layout="centered")
 
