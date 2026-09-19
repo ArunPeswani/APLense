@@ -17,40 +17,6 @@ from auth import enforce_admin_or_whitelisted_access
 
 enforce_admin_or_whitelisted_access()
 
-# --- USER PROFILE & ACCOUNT POPOVER HEADER ---
-user_is_logged_in = getattr(st.user, "is_logged_in", False)
-user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
-user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
-user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", None)) if user_is_logged_in else "https://www.w3schools.com/howto/img_avatar.png"
-
-if "reset_count_beta" not in st.session_state:
-    st.session_state.reset_count_beta = 0
-rc = st.session_state.reset_count_beta
-
-header_col1, header_col2 = st.columns([0.6, 0.4])
-with header_col1:
-    st.header("Deep Dive Matcher")
-with header_col2:
-    avatar_col, menu_col = st.columns([0.3, 0.7])
-    with avatar_col:
-        st.markdown(f"""
-            <div style="padding-top: 4px; text-align: right;">
-                <img src="{user_avatar}" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover;">
-            </div>
-        """, unsafe_allow_html=True)
-    with menu_col:
-        with st.popover("Account"):
-            st.markdown(f"""
-                <div style="text-align: center; padding: 10px 0px;">
-                    <img src="{user_avatar}" style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover; margin-bottom: 6px;">
-                    <div style="font-weight: 600; font-size: 14px; color: #202124;">{user_name}</div>
-                    <div style="font-size: 12px; color: #5f6368; margin-top: 2px; word-break: break-all;">{user_email}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            st.markdown("---")
-            if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_deep_{rc}"):
-                st.logout()
-
 st.write("Compare two specific documents or spreadsheets sheet-by-sheet to extract exact matching sentences or true paragraphs.")
 
 # Retrieve global reference text if available
