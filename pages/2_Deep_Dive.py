@@ -9,24 +9,51 @@ import re
 import difflib
 from PIL import Image, ImageEnhance
 import pytesseract
+from pillow_heif import register_heif_opener
+register_heif_opener()
 
 from db_utils import get_valid_db_connection
 from auth import enforce_admin_or_whitelisted_access
 
 enforce_admin_or_whitelisted_access()
 
+# --- USER PROFILE & ACCOUNT POPOVER HEADER ---
 user_is_logged_in = getattr(st.user, "is_logged_in", False)
 user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
 user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
+user_avatar = (getattr(st.user, "picture", None) or getattr(st.user, "image", None)) if user_is_logged_in else "https://www.w3schools.com/howto/img_avatar.png"
 
 if "reset_count_beta" not in st.session_state:
     st.session_state.reset_count_beta = 0
 rc = st.session_state.reset_count_beta
-supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif", "heic", "heif", "webp")
 
-st.header("Deep Dive Matcher")
+header_col1, header_col2 = st.columns([0.6, 0.4])
+with header_col1:
+    st.header("Deep Dive Matcher")
+with header_col2:
+    avatar_col, menu_col = st.columns([0.3, 0.7])
+    with avatar_col:
+        st.markdown(f"""
+            <div style="padding-top: 4px; text-align: right;">
+                <img src="{user_avatar}" style="width: 38px; height: 38px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover;">
+            </div>
+        """, unsafe_allow_html=True)
+    with menu_col:
+        with st.popover("Account"):
+            st.markdown(f"""
+                <div style="text-align: center; padding: 10px 0px;">
+                    <img src="{user_avatar}" style="width: 60px; height: 60px; border-radius: 50%; border: 2px solid #1a73e8; object-fit: cover; margin-bottom: 6px;">
+                    <div style="font-weight: 600; font-size: 14px; color: #202124;">{user_name}</div>
+                    <div style="font-size: 12px; color: #5f6368; margin-top: 2px; word-break: break-all;">{user_email}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            st.markdown("---")
+            if st.button("Sign Out", type="secondary", use_container_width=True, key=f"sign_out_deep_{rc}"):
+                st.logout()
+
 st.write("Compare two specific documents or spreadsheets sheet-by-sheet to extract exact matching sentences or true paragraphs.")
 
+# Retrieve global reference text if available
 global_ref_deep = ""
 try:
     conn = get_valid_db_connection()
@@ -41,6 +68,11 @@ try:
 except Exception:
     pass
 
+if global_ref_deep:
+    st.info("💡 Global Smart Filtering is active: Assignment prompt/reference text will be automatically filtered out during matching.")
+
+supported_exts = ("docx", "pdf", "txt", "rtf", "md", "xlsx", "xls", "png", "jpg", "jpeg", "tiff", "tif", "heic", "heif", "webp")
+
 col1, col2 = st.columns(2)
 with col1:
     file1 = st.file_uploader("Select Student A Document (Max 5MB)", type=list(supported_exts), max_upload_size=5, key=f"deep_file1_{rc}")
@@ -54,47 +86,59 @@ def get_file_bytes_temp(uploaded_file):
 
 def is_valid_sentence(sentence):
     s = sentence.strip()
-    if re.fullmatch(r'\d+\.?', s): return False
-    if len(s.split()) < 2: return False
+    if re.fullmatch(r'\d+\.?', s):
+        return False
+    if len(s.split()) < 4:
+        return False
     return True
 
 def get_document_lines_and_sentences(file_path, reference_text=""):
     ext = os.path.splitext(file_path)[1].lower()
     raw_blocks = []
-    if ext == '.docx':
-        import docx
-        doc = docx.Document(file_path)
-        raw_blocks = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-    elif ext == '.pdf':
-        reader = PdfReader(file_path)
-        full_text_pdf = ""
-        for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted: full_text_pdf += extracted + "\n\n"
-        if len(full_text_pdf.strip()) < 15:
-            with open(file_path, "rb") as f: pdf_bytes = f.read()
-            images = convert_from_bytes(pdf_bytes)
-            for img in images:
-                img_gray = img.convert('L')
-                img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.5)
-                full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
-        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
-    elif ext in ('.txt', '.rtf', '.md'):
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f: full_text_txt = f.read()
-        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
-    elif ext in ('.xlsx', '.xls'):
-        xls = pd.ExcelFile(file_path)
-        full_text_excel = ""
-        for sheet_name in xls.sheet_names:
-            df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
-            tokens = [str(val).strip() for val in df.values.flatten() if pd.notna(val) and str(val).strip().lower() != 'nan']
-            full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
-        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
-    elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
-        image = Image.open(file_path).convert('L')
-        image = ImageEnhance.Contrast(image).enhance(2.5)
-        full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
-        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
+    try:
+        if ext == '.docx':
+            import docx
+            doc = docx.Document(file_path)
+            raw_blocks = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        elif ext == '.pdf':
+            reader = PdfReader(file_path)
+            full_text_pdf = ""
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted: full_text_pdf += extracted + "\n\n"
+            if len(full_text_pdf.strip()) < 15:
+                with open(file_path, "rb") as f: pdf_bytes = f.read()
+                from pdf2image import convert_from_bytes
+                images = convert_from_bytes(pdf_bytes)
+                for img in images:
+                    img_gray = img.convert('L')
+                    img_enhanced = ImageEnhance.Contrast(img_gray).enhance(2.0)
+                    full_text_pdf += pytesseract.image_to_string(img_enhanced, lang='hin+eng') + "\n\n"
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
+        elif ext in ('.txt', '.rtf', '.md'):
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                full_text_txt = f.read()
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
+        elif ext in ('.xlsx', '.xls'):
+            xls = pd.ExcelFile(file_path)
+            full_text_excel = ""
+            for sheet_name in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+                tokens = []
+                for val in df.values.flatten():
+                    if pd.notna(val):
+                        val_str = str(val).strip()
+                        if val_str and val_str.lower() != 'nan':
+                            tokens.append(val_str)
+                full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
+        elif ext in ('.png', '.jpg', '.jpeg', '.tiff', '.tif', '.heic', '.heif', '.webp'):
+            image = Image.open(file_path).convert('L')
+            image = ImageEnhance.Contrast(image).enhance(2.0)
+            full_text_img = pytesseract.image_to_string(image, lang='hin+eng')
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_img) if b.strip()]
+    except Exception:
+        pass
     
     prompt_words = set(reference_text.split()) if reference_text else set()
     units = set()
@@ -112,28 +156,32 @@ def get_document_lines_and_sentences(file_path, reference_text=""):
 def get_document_true_paragraphs(file_path, reference_text=""):
     ext = os.path.splitext(file_path)[1].lower()
     raw_blocks = []
-    if ext == '.docx':
-        import docx
-        doc = docx.Document(file_path)
-        raw_blocks = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-    elif ext == '.pdf':
-        reader = PdfReader(file_path)
-        full_text_pdf = ""
-        for page in reader.pages:
-            extracted = page.extract_text()
-            if extracted: full_text_pdf += extracted + "\n\n"
-        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
-    elif ext in ('.txt', '.rtf', '.md'):
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f: full_text_txt = f.read()
-        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
-    elif ext in ('.xlsx', '.xls'):
-        xls = pd.ExcelFile(file_path)
-        full_text_excel = ""
-        for sheet_name in xls.sheet_names:
-            df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
-            tokens = [str(val).strip() for val in df.values.flatten() if pd.notna(val) and str(val).strip().lower() != 'nan']
-            full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
-        raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
+    try:
+        if ext == '.docx':
+            import docx
+            doc = docx.Document(file_path)
+            raw_blocks = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        elif ext == '.pdf':
+            reader = PdfReader(file_path)
+            full_text_pdf = ""
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted: full_text_pdf += extracted + "\n\n"
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_pdf) if b.strip()]
+        elif ext in ('.txt', '.rtf', '.md'):
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                full_text_txt = f.read()
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_txt) if b.strip()]
+        elif ext in ('.xlsx', '.xls'):
+            xls = pd.ExcelFile(file_path)
+            full_text_excel = ""
+            for sheet_name in xls.sheet_names:
+                df = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+                tokens = [str(val).strip() for val in df.values.flatten() if pd.notna(val) and str(val).strip().lower() != 'nan']
+                full_text_excel += f" [Sheet: {sheet_name}] " + " ".join(tokens) + " \n\n"
+            raw_blocks = [b.replace('\n', ' ').strip() for b in re.split(r'\n\s*\n', full_text_excel) if b.strip()]
+    except Exception:
+        pass
     
     prompt_words = set(reference_text.split()) if reference_text else set()
     valid_paragraphs = []
@@ -142,7 +190,7 @@ def get_document_true_paragraphs(file_path, reference_text=""):
         if prompt_words:
             cleaned_block = " ".join([w for w in cleaned_block.split() if w not in prompt_words or len(prompt_words) < 5])
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', cleaned_block) if s.strip()]
-        if len(sentences) >= 1 and len(cleaned_block.split()) >= 4:
+        if len(sentences) >= 2 and len(cleaned_block.split()) >= 8:
             valid_paragraphs.append(cleaned_block)
     return valid_paragraphs
 
@@ -248,7 +296,6 @@ if file1 and file2:
                 st.session_state.deep_report_content = "\n\n".join(common)
                 st.session_state.deep_filename = "paragraphs_report.txt"
             
-            # Save activity tracking logs
             try:
                 conn = get_valid_db_connection()
                 if conn:
