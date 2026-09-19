@@ -16,6 +16,12 @@ from auth import enforce_admin_or_whitelisted_access
 
 enforce_admin_or_whitelisted_access()
 
+# --- RESTRICT TO ADMIN ONLY ---
+user_email = getattr(st.user, "email", "")
+if user_email.lower() != "arunpeswani@gmail.com":
+    st.error("Access Denied. The AI Grader suite is currently restricted to the administrator.")
+    st.stop()
+
 user_is_logged_in = getattr(st.user, "is_logged_in", False)
 user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
 user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
