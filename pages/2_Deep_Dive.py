@@ -294,19 +294,63 @@ if file1 and file2:
             if os.path.exists(path1): os.unlink(path1)
             if os.path.exists(path2): os.unlink(path2)
 
-if st.session_state.get("deep_result_type") == "paraphrased_matches":
-    pairs = st.session_state.deep_para_pairs
-    st.success(f"Found {len(pairs)} potential paraphrased match(es)!")
-    for p1, p2, score in pairs:
-        with st.expander(f"Similarity Score: {score}%"):
-            st.markdown(f"**Doc A:** {p1}")
-            st.markdown(f"**Doc B:** {p2}")
-    st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"dl_deep_{rc}")
-elif st.session_state.get("deep_result_type") in ["sentences", "paragraphs"]:
-    st.success(f"Found {st.session_state.deep_count} matching instance(s)!")
-    st.text_area("Preview", st.session_state.deep_report_content, height=250, key=f"deep_prev_{rc}")
-    st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"dl_deep_{rc}")
-elif st.session_state.get("deep_result_type") == "empty_sentences":
-    st.info("Found 0 matching sentences.")
+# --- RENDER RESULTS ---
+if st.session_state.get("deep_result_type") == "empty_sentences":
+    st.info("Found 0 matching sentences/lines.")
 elif st.session_state.get("deep_result_type") == "empty_paras":
     st.info("Found 0 matching paragraphs.")
+elif st.session_state.get("deep_result_type") == "paraphrased_matches":
+    pairs = st.session_state.deep_para_pairs
+    if not pairs:
+        st.info("Found 0 potential paraphrased sentence matches.")
+    else:
+        st.success(f"Found {len(pairs)} potential paraphrased sentence match(es)!")
+        for p1, p2, score in pairs:
+            with st.expander(f"Similarity Score: {score}%"):
+                st.markdown(f"**Document A:** {p1}")
+                st.markdown(f"**Document B:** {p2}")
+        st.text_area("Paraphrase Deep Dive Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_para_{rc}")
+        st.download_button("📥 Download Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_para_{rc}")
+
+elif st.session_state.get("deep_result_type") == "excel_sheets_paraphrase":
+    st.success("Excel Sheet-by-Sheet Paraphrase analysis complete!")
+    for item in st.session_state.deep_excel_breakdown:
+        with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} potential paraphrased pairs found)"):
+            if not item['in_both']:
+                st.warning("This sheet name exists in only one of the uploaded workbooks.")
+            else:
+                pairs = item['paraphrase_pairs']
+                if pairs:
+                    st.write("**Paraphrased Sentence Pairs:**")
+                    for p1, p2, score in pairs:
+                        st.markdown(f"- **[Similarity: {score}%]**\n  * **Doc A:** {p1}\n  * **Doc B:** {p2}")
+                else:
+                    st.info("No potential paraphrased sentence matches found in this sheet.")
+    st.text_area("Full Sheet Paraphrase Breakdown Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_excel_para_{rc}")
+    st.download_button("📥 Download Excel Sheet Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_excel_para_{rc}")
+
+elif st.session_state.get("deep_result_type") == "excel_sheets":
+    st.success("Excel Sheet-by-Sheet analysis complete!")
+    for item in st.session_state.deep_excel_breakdown:
+        with st.expander(f"Sheet: {item['sheet']} ({item.get('count', 0)} matching sentences found)"):
+            if not item['in_both']:
+                st.warning("This sheet name exists in only one of the uploaded workbooks.")
+            else:
+                if item['common_sentences']:
+                    st.write("**Matching Sentences / Text Answers:**")
+                    for s in item['common_sentences']:
+                        st.markdown(f"- {s}")
+                else:
+                    st.info("No identical sentence matches found in this sheet.")
+    st.text_area("Full Sheet Breakdown Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_excel_{rc}")
+    st.download_button("📥 Download Excel Sheet Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_excel_{rc}")
+
+elif st.session_state.get("deep_result_type") in ["sentences", "paragraphs"]:
+    count = st.session_state.deep_count
+    label_text = "matching sentence(s)/line(s)!" if st.session_state.deep_result_type == "sentences" else "matching paragraph(s)!"
+    st.success(f"Found {count} {label_text}")
+    st.text_area("Matching Preview", st.session_state.deep_report_content, height=300, key=f"deep_preview_area_{rc}")
+    st.download_button("📥 Download Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_report_{rc}")
+
+if not file1 or not file2:
+    st.warning("Please upload both Student A and Student B documents to run Deep Dive.")
