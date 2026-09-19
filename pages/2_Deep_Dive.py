@@ -225,52 +225,68 @@ if file1 and file2:
             user_email = getattr(st.user, "email", "User") if user_is_logged_in else ""
             user_name = getattr(st.user, "name", "Google User") if user_is_logged_in else ""
 
-            if is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis" and run_deep_para:
-                breakdown = get_excel_sheet_breakdown(path1, path2, global_ref_deep, paraphrase_mode=True)
-                st.session_state.deep_result_type = "excel_sheets_paraphrase"
-                st.session_state.deep_excel_breakdown = breakdown
-                report_content = f"Excel Sheet-by-Sheet Paraphrase Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
-                for item in breakdown:
-                    report_content += f"Sheet Name: {item['sheet']}\n"
-                    if item['in_both']:
-                        for p1, p2, score in item['paraphrase_pairs']:
-                            report_content += f"  • [Similarity: {score}%]\n    - A: {p1}\n    - B: {p2}\n"
-                st.session_state.deep_report_content = report_content
-                st.session_state.deep_filename = "excel_sheet_paraphrase_report.txt"
-            elif is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis":
-                breakdown = get_excel_sheet_breakdown(path1, path2, global_ref_deep, paraphrase_mode=False)
-                st.session_state.deep_result_type = "excel_sheets"
-                st.session_state.deep_excel_breakdown = breakdown
-                report_content = f"Excel Sheet-by-Sheet Comparison Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
-                for item in breakdown:
-                    report_content += f"Sheet Name: {item['sheet']}\n"
-                    if item['in_both']:
-                        for s in item['common_sentences']: report_content += f"  • {s}\n"
-                st.session_state.deep_report_content = report_content
-                st.session_state.deep_filename = "excel_sheet_comparison_report.txt"
-            elif run_deep_para:
-                units1 = list(get_document_lines_and_sentences(path1, global_ref_deep))
-                units2 = list(get_document_lines_and_sentences(path2, global_ref_deep))
-                pairs = [(u1, u2, round(difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() * 100, 1)) for u1 in units1 for u2 in units2 if u1 != u2 and 0.65 <= difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() < 1.0]
-                pairs.sort(key=lambda x: x[2], reverse=True)
-                st.session_state.deep_result_type = "paraphrased_matches"
-                st.session_state.deep_para_pairs = pairs
-                report_content = f"Paraphrase Deep Dive Report\n" + "="*70 + "\n\n"
-                for p1, p2, score in pairs: report_content += f"[Similarity: {score}%]\n- Doc A: {p1}\n- Doc B: {p2}\n\n"
-                st.session_state.deep_report_content = report_content
-                st.session_state.deep_filename = "paraphrase_report.txt"
+            if is_excel_comparison and analysis_type == "Sheet-by-Sheet Analysis":
+                if run_deep_para:
+                    breakdown = get_excel_sheet_breakdown(path1, path2, global_ref_deep, paraphrase_mode=True)
+                    st.session_state.deep_result_type = "excel_sheets_paraphrase"
+                    st.session_state.deep_excel_breakdown = breakdown
+                    report_content = f"Excel Sheet-by-Sheet Paraphrase Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
+                    for item in breakdown:
+                        report_content += f"Sheet Name: {item['sheet']}\n"
+                        if item['in_both']:
+                            for p1, p2, score in item['paraphrase_pairs']:
+                                report_content += f"  • [Similarity: {score}%]\n    - A: {p1}\n    - B: {p2}\n"
+                    st.session_state.deep_report_content = report_content
+                    st.session_state.deep_filename = "excel_sheet_paraphrase_report.txt"
+                else:
+                    breakdown = get_excel_sheet_breakdown(path1, path2, global_ref_deep, paraphrase_mode=False)
+                    st.session_state.deep_result_type = "excel_sheets"
+                    st.session_state.deep_excel_breakdown = breakdown
+                    report_content = f"Excel Sheet-by-Sheet Comparison Report\nComparing '{file1.name}' and '{file2.name}'\n" + "="*70 + "\n\n"
+                    for item in breakdown:
+                        report_content += f"Sheet Name: {item['sheet']}\n"
+                        if item['in_both']:
+                            for s in item['common_sentences']: report_content += f"  • {s}\n"
+                    st.session_state.deep_report_content = report_content
+                    st.session_state.deep_filename = "excel_sheet_comparison_report.txt"
+
             elif analysis_type == "Sentence Comparison":
-                common = sorted(get_document_lines_and_sentences(path1, global_ref_deep).intersection(get_document_lines_and_sentences(path2, global_ref_deep)))
-                st.session_state.deep_result_type = "empty_sentences" if not common else "sentences"
-                st.session_state.deep_count = len(common)
-                st.session_state.deep_report_content = "\n\n".join(common)
-                st.session_state.deep_filename = "sentences_report.txt"
-            else:
-                common = sorted(set(get_document_true_paragraphs(path1, global_ref_deep)).intersection(set(get_document_true_paragraphs(path2, global_ref_deep))))
-                st.session_state.deep_result_type = "empty_paras" if not common else "paragraphs"
-                st.session_state.deep_count = len(common)
-                st.session_state.deep_report_content = "\n\n".join(common)
-                st.session_state.deep_filename = "paragraphs_report.txt"
+                if run_deep_para:
+                    units1 = list(get_document_lines_and_sentences(path1, global_ref_deep))
+                    units2 = list(get_document_lines_and_sentences(path2, global_ref_deep))
+                    pairs = [(u1, u2, round(difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() * 100, 1)) for u1 in units1 for u2 in units2 if u1 != u2 and 0.65 <= difflib.SequenceMatcher(None, u1.lower(), u2.lower()).ratio() < 1.0]
+                    pairs.sort(key=lambda x: x[2], reverse=True)
+                    st.session_state.deep_result_type = "paraphrased_matches"
+                    st.session_state.deep_para_pairs = pairs
+                    report_content = f"Paraphrase Deep Dive Report (Sentences)\n" + "="*70 + "\n\n"
+                    for p1, p2, score in pairs: report_content += f"[Similarity: {score}%]\n- Doc A: {p1}\n- Doc B: {p2}\n\n"
+                    st.session_state.deep_report_content = report_content
+                    st.session_state.deep_filename = "paraphrase_sentences_report.txt"
+                else:
+                    common = sorted(get_document_lines_and_sentences(path1, global_ref_deep).intersection(get_document_lines_and_sentences(path2, global_ref_deep)))
+                    st.session_state.deep_result_type = "empty_sentences" if not common else "sentences"
+                    st.session_state.deep_count = len(common)
+                    st.session_state.deep_report_content = "\n\n".join(common)
+                    st.session_state.deep_filename = "sentences_report.txt"
+
+            else:  # Paragraph Comparison
+                if run_deep_para:
+                    paras1 = list(get_document_true_paragraphs(path1, global_ref_deep))
+                    paras2 = list(get_document_true_paragraphs(path2, global_ref_deep))
+                    para_pairs = [(p1, p2, round(difflib.SequenceMatcher(None, p1.lower(), p2.lower()).ratio() * 100, 1)) for p1 in paras1 for p2 in paras2 if p1 != p2 and 0.65 <= difflib.SequenceMatcher(None, p1.lower(), p2.lower()).ratio() < 1.0]
+                    para_pairs.sort(key=lambda x: x[2], reverse=True)
+                    st.session_state.deep_result_type = "paraphrased_paragraphs"
+                    st.session_state.deep_para_pairs = para_pairs
+                    report_content = f"Paraphrase Deep Dive Report (Paragraphs)\n" + "="*70 + "\n\n"
+                    for p1, p2, score in para_pairs: report_content += f"[Similarity: {score}%]\n- Para A: {p1}\n- Para B: {p2}\n\n" + "="*50 + "\n\n"
+                    st.session_state.deep_report_content = report_content
+                    st.session_state.deep_filename = "paraphrase_paragraphs_report.txt"
+                else:
+                    common = sorted(set(get_document_true_paragraphs(path1, global_ref_deep)).intersection(set(get_document_true_paragraphs(path2, global_ref_deep))))
+                    st.session_state.deep_result_type = "empty_paras" if not common else "paragraphs"
+                    st.session_state.deep_count = len(common)
+                    st.session_state.deep_report_content = "\n\n".join(common)
+                    st.session_state.deep_filename = "paragraphs_report.txt"
             
             try:
                 conn = get_valid_db_connection()
@@ -283,7 +299,7 @@ if file1 and file2:
                         ) values (%s, %s, %s, %s, %s, %s, %s)
                     """, (
                         user_email, user_name, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        file1.name, file2.name, 1, "Deep dive analysis executed"
+                        file1.name, file2.name, 1, f"Deep dive {analysis_type} executed"
                     ))
                     conn.commit()
                     cursor.close()
@@ -299,18 +315,19 @@ if st.session_state.get("deep_result_type") == "empty_sentences":
     st.info("Found 0 matching sentences/lines.")
 elif st.session_state.get("deep_result_type") == "empty_paras":
     st.info("Found 0 matching paragraphs.")
-elif st.session_state.get("deep_result_type") == "paraphrased_matches":
+elif st.session_state.get("deep_result_type") in ["paraphrased_matches", "paraphrased_paragraphs"]:
     pairs = st.session_state.deep_para_pairs
+    mode_label = "sentence" if st.session_state.get("deep_result_type") == "paraphrased_matches" else "paragraph"
     if not pairs:
-        st.info("Found 0 potential paraphrased sentence matches.")
+        st.info(f"Found 0 potential paraphrased {mode_label} matches.")
     else:
-        st.success(f"Found {len(pairs)} potential paraphrased sentence match(es)!")
+        st.success(f"Found {len(pairs)} potential paraphrased {mode_label} match(es)!")
         for p1, p2, score in pairs:
             with st.expander(f"Similarity Score: {score}%"):
                 st.markdown(f"**Document A:** {p1}")
                 st.markdown(f"**Document B:** {p2}")
         st.text_area("Paraphrase Deep Dive Report", st.session_state.deep_report_content, height=300, key=f"deep_preview_para_{rc}")
-        st.download_button("📥 Download Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_para_{rc}")
+        st.download_button(f"📥 Download Paraphrase Report (.txt)", data=st.session_state.deep_report_content, file_name=st.session_state.deep_filename, mime="text/plain", key=f"download_deep_para_{rc}")
 
 elif st.session_state.get("deep_result_type") == "excel_sheets_paraphrase":
     st.success("Excel Sheet-by-Sheet Paraphrase analysis complete!")
