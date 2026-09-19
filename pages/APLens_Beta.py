@@ -169,7 +169,7 @@ def get_cached_requests_and_users():
     except Exception:
         return pd.DataFrame(), pd.DataFrame()
 
-# --- INITIALIZE DATABASE & WARM UP CACHE ONCE PER SESSION ---
+# --- INITIALIZE DATABASE & WARM UP CACHE ONCE PER SESSION (PREVENTS NAVIGATION LAG) ---
 if "db_initialized" not in st.session_state:
     init_neon_db()
     get_cached_requests_and_users()
